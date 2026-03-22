@@ -1,0 +1,23 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+
+# Virtual env
+env/
+.venv/
+
+# IDE / OS
+.cache/
+.DS_Store
+.idea/
+
+# Large files
+*.tif
+*.zip
+*.avi
+*.mp4
+
+# Project-specific
+data/
+outputs/
