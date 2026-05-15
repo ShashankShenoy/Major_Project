@@ -10,6 +10,7 @@
   <script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
 
   <style>
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
 
     * {
       margin: 0;
@@ -18,38 +19,40 @@
     }
 
     :root {
-      --primary: #2563eb;
-      --primary-light: #3b82f6;
-      --primary-dark: #1e40af;
-      --accent: #059669;
-      --warning: #dc2626;
-      --info: #0891b2;
-      --success: #16a34a;
+      --primary: #0ea5e9;
+      --primary-light: #06b6d4;
+      --primary-dark: #0284c7;
+      --accent: #06b6d4;
+      --warning: #ef4444;
+      --info: #06b6d4;
+      --success: #10b981;
 
       --bg-0: #ffffff;
-      --bg-1: #f9fafb;
-      --bg-2: #f3f4f6;
-      --bg-3: #e5e7eb;
-      --bg-dark-0: #111827;
-      --bg-dark-1: #1f2937;
-      --bg-dark-2: #374151;
-      --bg-dark-3: #4b5563;
+      --bg-1: #f8fafc;
+      --bg-2: #f1f5f9;
+      --bg-3: #e2e8f0;
+      --bg-dark-0: #0f172a;
+      --bg-dark-1: #1e293b;
+      --bg-dark-2: #334155;
+      --bg-dark-3: #475569;
 
-      --text-primary: #1f2937;
-      --text-secondary: #6b7280;
-      --text-tertiary: #9ca3af;
-      --text-light: #f9fafb;
+      --text-primary: #1e293b;
+      --text-secondary: #64748b;
+      --text-tertiary: #94a3b8;
+      --text-light: #f8fafc;
 
-      --border: #e5e7eb;
-      --border-dark: #374151;
+      --border: #e2e8f0;
+      --border-dark: #334155;
     }
 
     body {
-      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif;
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
       background: var(--bg-0);
       color: var(--text-primary);
       overflow: hidden;
       height: 100vh;
+      -webkit-font-smoothing: antialiased;
+      -moz-osx-font-smoothing: grayscale;
     }
 
     body.dark-mode {
@@ -263,20 +266,22 @@
     }
 
     .input-row {
-      display: grid;
-      grid-template-columns: 1fr 1fr;
+      display: flex;
+      flex-direction: column;
       gap: 8px;
-      margin-bottom: 10px;
+      margin-bottom: 12px;
     }
 
     input, select {
-      padding: 8px 10px;
+      padding: 10px 12px;
       border: 1px solid var(--border);
       border-radius: 6px;
-      font-size: 12px;
+      font-size: 13px;
       background: var(--bg-0);
       color: var(--text-primary);
       transition: all 0.2s ease;
+      font-family: 'Inter', sans-serif;
+      width: 100%;
     }
 
     body.dark-mode input,
@@ -289,12 +294,12 @@
     input:focus, select:focus {
       outline: none;
       border-color: var(--primary);
-      box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
+      box-shadow: 0 0 0 3px rgba(14, 165, 233, 0.1);
     }
 
     body.dark-mode input:focus,
     body.dark-mode select:focus {
-      box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.2);
+      box-shadow: 0 0 0 3px rgba(14, 165, 233, 0.2);
     }
 
     .button-row {
@@ -304,23 +309,24 @@
     }
 
     button {
-      padding: 8px;
+      padding: 10px 12px;
       border: none;
       border-radius: 6px;
-      font-size: 11px;
-      font-weight: 700;
+      font-size: 12px;
+      font-weight: 600;
       text-transform: uppercase;
-      letter-spacing: 0.5px;
+      letter-spacing: 0.4px;
       cursor: pointer;
       transition: all 0.3s ease;
       background: var(--primary);
       color: white;
+      font-family: 'Inter', sans-serif;
     }
 
     button:hover {
       background: var(--primary-dark);
       transform: translateY(-1px);
-      box-shadow: 0 2px 8px rgba(37, 99, 235, 0.3);
+      box-shadow: 0 4px 12px rgba(14, 165, 233, 0.3);
     }
 
     button:active {
@@ -339,10 +345,12 @@
 
     .button-secondary:hover {
       background: var(--bg-3);
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
     }
 
     body.dark-mode .button-secondary:hover {
       background: var(--bg-dark-3);
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
     }
 
     /* ─────────────── FILTERS ─────────────── */
@@ -385,7 +393,7 @@
     /* ─────────────── VESSEL CARD ─────────────── */
 
     .vessel-card {
-      background: linear-gradient(135deg, rgba(37, 99, 235, 0.05), rgba(5, 150, 105, 0.05));
+      background: linear-gradient(135deg, rgba(14, 165, 233, 0.05), rgba(6, 182, 212, 0.05));
       border: 1px solid var(--border);
       border-radius: 8px;
       padding: 12px;
@@ -395,24 +403,24 @@
     }
 
     body.dark-mode .vessel-card {
-      background: linear-gradient(135deg, rgba(59, 130, 246, 0.08), rgba(16, 185, 129, 0.08));
+      background: linear-gradient(135deg, rgba(14, 165, 233, 0.1), rgba(6, 182, 212, 0.1));
       border-color: var(--border-dark);
     }
 
     .vessel-card:hover {
       border-color: var(--primary);
-      box-shadow: 0 4px 12px rgba(37, 99, 235, 0.15);
+      box-shadow: 0 4px 12px rgba(14, 165, 233, 0.15);
       transform: translateY(-2px);
     }
 
     body.dark-mode .vessel-card:hover {
-      box-shadow: 0 4px 12px rgba(59, 130, 246, 0.2);
+      box-shadow: 0 4px 12px rgba(14, 165, 233, 0.25);
     }
 
     .vessel-card.selected {
-      background: linear-gradient(135deg, rgba(37, 99, 235, 0.15), rgba(5, 150, 105, 0.15));
+      background: linear-gradient(135deg, rgba(14, 165, 233, 0.15), rgba(6, 182, 212, 0.15));
       border-color: var(--primary);
-      box-shadow: 0 4px 12px rgba(37, 99, 235, 0.2);
+      box-shadow: 0 4px 12px rgba(14, 165, 233, 0.25);
     }
 
     .vessel-name {
@@ -467,17 +475,17 @@
     }
 
     .status-moving {
-      background: rgba(37, 99, 235, 0.15);
+      background: rgba(14, 165, 233, 0.15);
       color: var(--primary);
     }
 
     body.dark-mode .status-moving {
-      background: rgba(59, 130, 246, 0.25);
+      background: rgba(14, 165, 233, 0.25);
       color: var(--primary-light);
     }
 
     .status-anchored {
-      background: rgba(220, 38, 38, 0.15);
+      background: rgba(239, 68, 68, 0.15);
       color: var(--warning);
     }
 
@@ -510,7 +518,7 @@
       background: var(--bg-2);
       border: 1px solid var(--border);
       border-radius: 6px;
-      padding: 10px;
+      padding: 12px;
       text-align: center;
       transition: all 0.2s ease;
     }
@@ -522,6 +530,7 @@
 
     .metric-box:hover {
       border-color: var(--primary);
+      box-shadow: 0 2px 8px rgba(14, 165, 233, 0.1);
     }
 
     .metric-value {
@@ -564,13 +573,13 @@
     }
 
     .alert-info {
-      background: rgba(37, 99, 235, 0.1);
+      background: rgba(14, 165, 233, 0.1);
       border-left-color: var(--primary);
       color: var(--primary);
     }
 
     body.dark-mode .alert-info {
-      background: rgba(59, 130, 246, 0.15);
+      background: rgba(14, 165, 233, 0.15);
       color: var(--primary-light);
     }
 
@@ -600,7 +609,7 @@
 
     .progress-fill {
       height: 100%;
-      background: linear-gradient(90deg, var(--primary), var(--accent));
+      background: linear-gradient(90deg, var(--primary), var(--primary-light));
       border-radius: 2px;
     }
 
