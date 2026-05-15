@@ -42,7 +42,7 @@ class ShipLSTM(nn.Module):
         # -------- DECODER (unidirectional) --------
         # Takes context + previous position
         self.decoder = nn.LSTMCell(
-            input_size + hidden * 2,  # position + attended context
+            2 + hidden * 2,  # position (x,y) + attended context
             hidden
         )
         
