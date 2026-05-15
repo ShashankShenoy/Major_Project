@@ -10,8 +10,6 @@
   <script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
 
   <style>
-    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
-
     * {
       margin: 0;
       padding: 0;
@@ -19,34 +17,34 @@
     }
 
     :root {
-      --primary: #0ea5e9;
-      --primary-light: #06b6d4;
-      --primary-dark: #0284c7;
-      --accent: #06b6d4;
-      --warning: #ef4444;
-      --info: #06b6d4;
-      --success: #10b981;
+      --primary: #1e40af;
+      --primary-light: #3b82f6;
+      --primary-dark: #1e3a8a;
+      --accent: #1e40af;
+      --warning: #dc2626;
+      --info: #1e40af;
+      --success: #059669;
 
       --bg-0: #ffffff;
-      --bg-1: #f8fafc;
-      --bg-2: #f1f5f9;
-      --bg-3: #e2e8f0;
-      --bg-dark-0: #0f172a;
-      --bg-dark-1: #1e293b;
-      --bg-dark-2: #334155;
-      --bg-dark-3: #475569;
+      --bg-1: #fafafa;
+      --bg-2: #f5f5f5;
+      --bg-3: #eeeeee;
+      --bg-dark-0: #1a1a1a;
+      --bg-dark-1: #242424;
+      --bg-dark-2: #2d2d2d;
+      --bg-dark-3: #363636;
 
-      --text-primary: #1e293b;
-      --text-secondary: #64748b;
-      --text-tertiary: #94a3b8;
-      --text-light: #f8fafc;
+      --text-primary: #1f2937;
+      --text-secondary: #6b7280;
+      --text-tertiary: #9ca3af;
+      --text-light: #e8e8e8;
 
-      --border: #e2e8f0;
-      --border-dark: #334155;
+      --border: #e5e7eb;
+      --border-dark: #3f3f3f;
     }
 
     body {
-      font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Helvetica Neue', sans-serif;
       background: var(--bg-0);
       color: var(--text-primary);
       overflow: hidden;
@@ -95,7 +93,7 @@
     }
 
     .system-icon {
-      font-size: 20px;
+      display: none;
     }
 
     .top-stats {
@@ -697,8 +695,7 @@
     <!-- TOP BAR -->
     <div class="top-bar">
       <div class="system-title">
-        <span class="system-icon">🛰️</span>
-        <span>Enterprise Maritime Intelligence</span>
+        <span>Maritime Intelligence System</span>
       </div>
       <div class="top-stats">
         <div class="stat">
@@ -718,7 +715,7 @@
           <div class="stat-value" id="headerCoverage">1.0°</div>
         </div>
       </div>
-      <button class="theme-toggle" onclick="toggleTheme()">🌙</button>
+      <button class="theme-toggle" onclick="toggleTheme()">Theme</button>
     </div>
 
     <!-- MAIN CONTENT -->
@@ -731,7 +728,7 @@
 
           <!-- TRACKING SECTION -->
           <div class="section">
-            <div class="section-title">📍 Tracking Area</div>
+            <div class="section-title">Tracking Area</div>
             <div class="input-row">
               <input id="lat" placeholder="Latitude" value="1.264">
               <input id="lon" placeholder="Longitude" value="103.84">
@@ -744,7 +741,7 @@
 
           <!-- FILTERS SECTION -->
           <div class="section">
-            <div class="section-title">⚙️ Display Filters</div>
+            <div class="section-title">Display Filters</div>
             <div class="filter-item">
               <input type="checkbox" id="showTracks" checked>
               <div class="checkbox-custom">✓</div>
@@ -774,7 +771,7 @@
 
           <!-- ADVANCED FILTERS -->
           <div class="section">
-            <div class="section-title">🔍 Advanced Filters</div>
+            <div class="section-title">Advanced Filters</div>
             <select style="width: 100%; margin-bottom: 8px;">
               <option>All Vessel Types</option>
               <option>Container Ships</option>
@@ -802,7 +799,7 @@
 
           <!-- SEARCH -->
           <div class="section">
-            <div class="section-title">🔎 Vessel Search</div>
+            <div class="section-title">Vessel Search</div>
             <input placeholder="Search by name..." style="width: 100%; margin-bottom: 10px;">
             <input placeholder="Search by MMSI..." style="width: 100%; margin-bottom: 10px;">
           </div>
@@ -845,7 +842,7 @@
 
           <!-- VESSEL DETAILS -->
           <div class="section" id="vesselDetailsSection" style="display: none;">
-            <div class="section-title">📋 Selected Vessel</div>
+            <div class="section-title">Selected Vessel</div>
             <div id="selectedVesselContent"></div>
           </div>
 
@@ -858,7 +855,7 @@
 
           <!-- ANALYTICS -->
           <div class="section">
-            <div class="section-title">📊 Fleet Analytics</div>
+            <div class="section-title">Fleet Analytics</div>
             <div class="metric-grid">
               <div class="metric-box">
                 <div class="metric-value" id="metricMaxSpeed">0</div>
@@ -881,10 +878,10 @@
 
           <!-- ALERTS -->
           <div class="section">
-            <div class="section-title">🚨 System Alerts</div>
+            <div class="section-title">System Alerts</div>
             <div id="alertsContainer">
               <div class="alert alert-success">
-                <strong>✓ System Online</strong><br>
+                <strong>System Online</strong><br>
                 All systems operational
               </div>
             </div>
@@ -892,7 +889,7 @@
 
           <!-- STATISTICS -->
           <div class="section">
-            <div class="section-title">📈 Statistics</div>
+            <div class="section-title">Statistics</div>
             <div style="font-size: 11px; color: var(--text-secondary);">
               <div style="display: flex; justify-content: space-between; margin-bottom: 8px;">
                 <span>Coverage Area:</span>

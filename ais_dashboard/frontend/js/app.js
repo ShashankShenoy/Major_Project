@@ -24,12 +24,12 @@ function toggleTheme() {
   darkMode = !darkMode;
   localStorage.setItem('darkMode', darkMode);
   document.body.classList.toggle('dark-mode', darkMode);
-  document.querySelector('.theme-toggle').innerText = darkMode ? '☀️' : '🌙';
+  document.querySelector('.theme-toggle').innerText = darkMode ? 'Light' : 'Dark';
 }
 
 if (darkMode) {
   document.body.classList.add('dark-mode');
-  document.querySelector('.theme-toggle').innerText = '☀️';
+  document.querySelector('.theme-toggle').innerText = 'Light';
 }
 
 // ─────────────────────────────
