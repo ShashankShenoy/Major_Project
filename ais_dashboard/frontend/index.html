@@ -1,0 +1,918 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Enterprise Maritime Intelligence System</title>
+
+  <link href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css" rel="stylesheet">
+  <script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
+
+  <style>
+
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    :root {
+      --primary: #2563eb;
+      --primary-light: #3b82f6;
+      --primary-dark: #1e40af;
+      --accent: #059669;
+      --warning: #dc2626;
+      --info: #0891b2;
+      --success: #16a34a;
+
+      --bg-0: #ffffff;
+      --bg-1: #f9fafb;
+      --bg-2: #f3f4f6;
+      --bg-3: #e5e7eb;
+      --bg-dark-0: #111827;
+      --bg-dark-1: #1f2937;
+      --bg-dark-2: #374151;
+      --bg-dark-3: #4b5563;
+
+      --text-primary: #1f2937;
+      --text-secondary: #6b7280;
+      --text-tertiary: #9ca3af;
+      --text-light: #f9fafb;
+
+      --border: #e5e7eb;
+      --border-dark: #374151;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif;
+      background: var(--bg-0);
+      color: var(--text-primary);
+      overflow: hidden;
+      height: 100vh;
+    }
+
+    body.dark-mode {
+      background: var(--bg-dark-0);
+      color: var(--text-light);
+    }
+
+    .dashboard {
+      display: flex;
+      height: 100vh;
+      flex-direction: column;
+    }
+
+    /* ─────────────── TOP BAR ─────────────── */
+
+    .top-bar {
+      background: linear-gradient(to right, var(--bg-1), var(--bg-0));
+      border-bottom: 1px solid var(--border);
+      padding: 12px 24px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      height: 56px;
+    }
+
+    body.dark-mode .top-bar {
+      background: linear-gradient(to right, var(--bg-dark-1), var(--bg-dark-0));
+      border-bottom-color: var(--border-dark);
+    }
+
+    .system-title {
+      font-size: 14px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      color: var(--primary);
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .system-icon {
+      font-size: 20px;
+    }
+
+    .top-stats {
+      display: flex;
+      gap: 30px;
+      align-items: center;
+    }
+
+    .stat {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
+
+    .stat-label {
+      font-size: 10px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      color: var(--text-secondary);
+      font-weight: 600;
+    }
+
+    body.dark-mode .stat-label {
+      color: var(--text-tertiary);
+    }
+
+    .stat-value {
+      font-size: 16px;
+      font-weight: 700;
+      color: var(--primary);
+    }
+
+    .theme-toggle {
+      background: var(--bg-2);
+      border: none;
+      border-radius: 6px;
+      padding: 8px 12px;
+      cursor: pointer;
+      font-size: 14px;
+      transition: all 0.3s ease;
+    }
+
+    body.dark-mode .theme-toggle {
+      background: var(--bg-dark-2);
+      color: var(--text-light);
+    }
+
+    .theme-toggle:hover {
+      background: var(--bg-3);
+    }
+
+    body.dark-mode .theme-toggle:hover {
+      background: var(--bg-dark-3);
+    }
+
+    /* ─────────────── MAIN CONTENT ─────────────── */
+
+    .main-content {
+      flex: 1;
+      display: flex;
+      overflow: hidden;
+      gap: 0;
+    }
+
+    .left-panel {
+      width: 300px;
+      background: var(--bg-1);
+      border-right: 1px solid var(--border);
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    body.dark-mode .left-panel {
+      background: var(--bg-dark-1);
+      border-right-color: var(--border-dark);
+    }
+
+    .map-area {
+      flex: 1;
+      position: relative;
+      background: #000;
+    }
+
+    #map {
+      width: 100%;
+      height: 100%;
+    }
+
+    .right-panel {
+      width: 380px;
+      background: var(--bg-1);
+      border-left: 1px solid var(--border);
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    body.dark-mode .right-panel {
+      background: var(--bg-dark-1);
+      border-left-color: var(--border-dark);
+    }
+
+    /* ─────────────── PANELS ─────────────── */
+
+    .panel-header {
+      padding: 16px;
+      border-bottom: 1px solid var(--border);
+      background: var(--bg-2);
+      font-size: 12px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.8px;
+      color: var(--primary);
+    }
+
+    body.dark-mode .panel-header {
+      background: var(--bg-dark-2);
+      border-bottom-color: var(--border-dark);
+      color: var(--primary-light);
+    }
+
+    .panel-content {
+      flex: 1;
+      overflow-y: auto;
+      padding: 0;
+    }
+
+    .panel-content::-webkit-scrollbar {
+      width: 6px;
+    }
+
+    .panel-content::-webkit-scrollbar-thumb {
+      background: var(--bg-3);
+      border-radius: 3px;
+    }
+
+    body.dark-mode .panel-content::-webkit-scrollbar-thumb {
+      background: var(--bg-dark-3);
+    }
+
+    .panel-content::-webkit-scrollbar-thumb:hover {
+      background: var(--text-tertiary);
+    }
+
+    /* ─────────────── SECTIONS ─────────────── */
+
+    .section {
+      padding: 16px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    body.dark-mode .section {
+      border-bottom-color: var(--border-dark);
+    }
+
+    .section-title {
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.8px;
+      color: var(--text-secondary);
+      margin-bottom: 12px;
+    }
+
+    body.dark-mode .section-title {
+      color: var(--text-tertiary);
+    }
+
+    .input-row {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+      margin-bottom: 10px;
+    }
+
+    input, select {
+      padding: 8px 10px;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      font-size: 12px;
+      background: var(--bg-0);
+      color: var(--text-primary);
+      transition: all 0.2s ease;
+    }
+
+    body.dark-mode input,
+    body.dark-mode select {
+      background: var(--bg-dark-2);
+      color: var(--text-light);
+      border-color: var(--border-dark);
+    }
+
+    input:focus, select:focus {
+      outline: none;
+      border-color: var(--primary);
+      box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
+    }
+
+    body.dark-mode input:focus,
+    body.dark-mode select:focus {
+      box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.2);
+    }
+
+    .button-row {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+    }
+
+    button {
+      padding: 8px;
+      border: none;
+      border-radius: 6px;
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      cursor: pointer;
+      transition: all 0.3s ease;
+      background: var(--primary);
+      color: white;
+    }
+
+    button:hover {
+      background: var(--primary-dark);
+      transform: translateY(-1px);
+      box-shadow: 0 2px 8px rgba(37, 99, 235, 0.3);
+    }
+
+    button:active {
+      transform: translateY(0);
+    }
+
+    .button-secondary {
+      background: var(--bg-2);
+      color: var(--text-primary);
+    }
+
+    body.dark-mode .button-secondary {
+      background: var(--bg-dark-2);
+      color: var(--text-light);
+    }
+
+    .button-secondary:hover {
+      background: var(--bg-3);
+    }
+
+    body.dark-mode .button-secondary:hover {
+      background: var(--bg-dark-3);
+    }
+
+    /* ─────────────── FILTERS ─────────────── */
+
+    .filter-item {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 0;
+      font-size: 12px;
+      cursor: pointer;
+    }
+
+    .checkbox-custom {
+      width: 16px;
+      height: 16px;
+      border: 2px solid var(--border);
+      border-radius: 4px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: all 0.2s ease;
+      flex-shrink: 0;
+    }
+
+    body.dark-mode .checkbox-custom {
+      border-color: var(--border-dark);
+    }
+
+    .filter-item input[type="checkbox"] {
+      display: none;
+    }
+
+    .filter-item input[type="checkbox"]:checked ~ .checkbox-custom {
+      background: var(--primary);
+      border-color: var(--primary);
+      color: white;
+    }
+
+    /* ─────────────── VESSEL CARD ─────────────── */
+
+    .vessel-card {
+      background: linear-gradient(135deg, rgba(37, 99, 235, 0.05), rgba(5, 150, 105, 0.05));
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 12px;
+      margin-bottom: 10px;
+      cursor: pointer;
+      transition: all 0.3s ease;
+    }
+
+    body.dark-mode .vessel-card {
+      background: linear-gradient(135deg, rgba(59, 130, 246, 0.08), rgba(16, 185, 129, 0.08));
+      border-color: var(--border-dark);
+    }
+
+    .vessel-card:hover {
+      border-color: var(--primary);
+      box-shadow: 0 4px 12px rgba(37, 99, 235, 0.15);
+      transform: translateY(-2px);
+    }
+
+    body.dark-mode .vessel-card:hover {
+      box-shadow: 0 4px 12px rgba(59, 130, 246, 0.2);
+    }
+
+    .vessel-card.selected {
+      background: linear-gradient(135deg, rgba(37, 99, 235, 0.15), rgba(5, 150, 105, 0.15));
+      border-color: var(--primary);
+      box-shadow: 0 4px 12px rgba(37, 99, 235, 0.2);
+    }
+
+    .vessel-name {
+      font-size: 13px;
+      font-weight: 700;
+      color: var(--primary);
+      margin-bottom: 4px;
+    }
+
+    .vessel-info {
+      display: flex;
+      justify-content: space-between;
+      font-size: 11px;
+      margin-bottom: 6px;
+    }
+
+    .vessel-info-item {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
+
+    .vessel-info-label {
+      color: var(--text-tertiary);
+      font-weight: 500;
+    }
+
+    body.dark-mode .vessel-info-label {
+      color: var(--text-tertiary);
+    }
+
+    .vessel-info-value {
+      color: var(--text-primary);
+      font-weight: 600;
+      font-family: 'Courier New', monospace;
+    }
+
+    body.dark-mode .vessel-info-value {
+      color: var(--text-light);
+    }
+
+    .status-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      padding: 3px 8px;
+      border-radius: 4px;
+      font-size: 10px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.3px;
+    }
+
+    .status-moving {
+      background: rgba(37, 99, 235, 0.15);
+      color: var(--primary);
+    }
+
+    body.dark-mode .status-moving {
+      background: rgba(59, 130, 246, 0.25);
+      color: var(--primary-light);
+    }
+
+    .status-anchored {
+      background: rgba(220, 38, 38, 0.15);
+      color: var(--warning);
+    }
+
+    body.dark-mode .status-anchored {
+      background: rgba(239, 68, 68, 0.25);
+    }
+
+    .status-dot {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: currentColor;
+      animation: pulse 2s infinite;
+    }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.6; }
+    }
+
+    /* ─────────────── METRIC GRID ─────────────── */
+
+    .metric-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+    }
+
+    .metric-box {
+      background: var(--bg-2);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 10px;
+      text-align: center;
+      transition: all 0.2s ease;
+    }
+
+    body.dark-mode .metric-box {
+      background: var(--bg-dark-2);
+      border-color: var(--border-dark);
+    }
+
+    .metric-box:hover {
+      border-color: var(--primary);
+    }
+
+    .metric-value {
+      font-size: 18px;
+      font-weight: 700;
+      color: var(--primary);
+      margin-bottom: 3px;
+    }
+
+    .metric-label {
+      font-size: 10px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      color: var(--text-secondary);
+      font-weight: 600;
+    }
+
+    body.dark-mode .metric-label {
+      color: var(--text-tertiary);
+    }
+
+    /* ─────────────── ALERTS ─────────────── */
+
+    .alert {
+      padding: 10px;
+      margin-bottom: 8px;
+      border-radius: 6px;
+      border-left: 3px solid;
+      font-size: 11px;
+    }
+
+    .alert-warning {
+      background: rgba(220, 38, 38, 0.1);
+      border-left-color: var(--warning);
+      color: var(--warning);
+    }
+
+    body.dark-mode .alert-warning {
+      background: rgba(239, 68, 68, 0.15);
+    }
+
+    .alert-info {
+      background: rgba(37, 99, 235, 0.1);
+      border-left-color: var(--primary);
+      color: var(--primary);
+    }
+
+    body.dark-mode .alert-info {
+      background: rgba(59, 130, 246, 0.15);
+      color: var(--primary-light);
+    }
+
+    .alert-success {
+      background: rgba(22, 163, 74, 0.1);
+      border-left-color: var(--success);
+      color: var(--success);
+    }
+
+    body.dark-mode .alert-success {
+      background: rgba(34, 197, 94, 0.15);
+    }
+
+    /* ─────────────── PROGRESS BAR ─────────────── */
+
+    .progress-bar {
+      height: 4px;
+      background: var(--bg-2);
+      border-radius: 2px;
+      overflow: hidden;
+      margin-top: 6px;
+    }
+
+    body.dark-mode .progress-bar {
+      background: var(--bg-dark-2);
+    }
+
+    .progress-fill {
+      height: 100%;
+      background: linear-gradient(90deg, var(--primary), var(--accent));
+      border-radius: 2px;
+    }
+
+    /* ─────────────── MAP OVERLAY ─────────────── */
+
+    .map-overlay {
+      position: absolute;
+      top: 20px;
+      right: 20px;
+      background: rgba(255, 255, 255, 0.95);
+      backdrop-filter: blur(10px);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 12px;
+      z-index: 100;
+      min-width: 250px;
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+    }
+
+    body.dark-mode .map-overlay {
+      background: rgba(17, 24, 39, 0.95);
+      border-color: var(--border-dark);
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.5);
+    }
+
+    .overlay-title {
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.8px;
+      color: var(--primary);
+      margin-bottom: 10px;
+    }
+
+    body.dark-mode .overlay-title {
+      color: var(--primary-light);
+    }
+
+    .legend-item {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 11px;
+      margin-bottom: 6px;
+      color: var(--text-secondary);
+    }
+
+    body.dark-mode .legend-item {
+      color: var(--text-tertiary);
+    }
+
+    .legend-color {
+      width: 12px;
+      height: 12px;
+      border-radius: 3px;
+      flex-shrink: 0;
+    }
+
+    /* ─────────────── NO DATA ─────────────── */
+
+    .no-data {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      height: 100%;
+      padding: 40px;
+      text-align: center;
+      color: var(--text-secondary);
+      font-size: 12px;
+      line-height: 1.6;
+    }
+
+    body.dark-mode .no-data {
+      color: var(--text-tertiary);
+    }
+
+  </style>
+
+</head>
+
+<body>
+
+  <div class="dashboard">
+
+    <!-- TOP BAR -->
+    <div class="top-bar">
+      <div class="system-title">
+        <span class="system-icon">🛰️</span>
+        <span>Enterprise Maritime Intelligence</span>
+      </div>
+      <div class="top-stats">
+        <div class="stat">
+          <div class="stat-label">Vessels</div>
+          <div class="stat-value" id="headerVessels">0</div>
+        </div>
+        <div class="stat">
+          <div class="stat-label">Alerts</div>
+          <div class="stat-value" id="headerAlerts">0</div>
+        </div>
+        <div class="stat">
+          <div class="stat-label">Avg Speed</div>
+          <div class="stat-value" id="headerAvgSpeed">—</div>
+        </div>
+        <div class="stat">
+          <div class="stat-label">Coverage</div>
+          <div class="stat-value" id="headerCoverage">1.0°</div>
+        </div>
+      </div>
+      <button class="theme-toggle" onclick="toggleTheme()">🌙</button>
+    </div>
+
+    <!-- MAIN CONTENT -->
+    <div class="main-content">
+
+      <!-- LEFT PANEL: CONTROL -->
+      <div class="left-panel">
+        <div class="panel-header">Controls & Search</div>
+        <div class="panel-content">
+
+          <!-- TRACKING SECTION -->
+          <div class="section">
+            <div class="section-title">📍 Tracking Area</div>
+            <div class="input-row">
+              <input id="lat" placeholder="Latitude" value="1.264">
+              <input id="lon" placeholder="Longitude" value="103.84">
+            </div>
+            <div class="button-row">
+              <button onclick="startTracking()">Track</button>
+              <button class="button-secondary" onclick="toggleReplay()" id="replayBtn">Replay</button>
+            </div>
+          </div>
+
+          <!-- FILTERS SECTION -->
+          <div class="section">
+            <div class="section-title">⚙️ Display Filters</div>
+            <div class="filter-item">
+              <input type="checkbox" id="showTracks" checked>
+              <div class="checkbox-custom">✓</div>
+              <span>Tracks</span>
+            </div>
+            <div class="filter-item">
+              <input type="checkbox" id="showPredicted" checked>
+              <div class="checkbox-custom">✓</div>
+              <span>Predicted Routes</span>
+            </div>
+            <div class="filter-item">
+              <input type="checkbox" id="showArrows" checked>
+              <div class="checkbox-custom">✓</div>
+              <span>Direction Arrows</span>
+            </div>
+            <div class="filter-item">
+              <input type="checkbox" id="showHeatmap">
+              <div class="checkbox-custom"></div>
+              <span>Density Heatmap</span>
+            </div>
+            <div class="filter-item">
+              <input type="checkbox" id="showPorts">
+              <div class="checkbox-custom"></div>
+              <span>Nearby Ports</span>
+            </div>
+          </div>
+
+          <!-- ADVANCED FILTERS -->
+          <div class="section">
+            <div class="section-title">🔍 Advanced Filters</div>
+            <select style="width: 100%; margin-bottom: 8px;">
+              <option>All Vessel Types</option>
+              <option>Container Ships</option>
+              <option>Tankers</option>
+              <option>Bulk Carriers</option>
+              <option>Passenger Ships</option>
+              <option>Fishing Vessels</option>
+            </select>
+            <div class="filter-item">
+              <input type="checkbox">
+              <div class="checkbox-custom"></div>
+              <span>Speed > 5 kts</span>
+            </div>
+            <div class="filter-item">
+              <input type="checkbox">
+              <div class="checkbox-custom"></div>
+              <span>Anchored Only</span>
+            </div>
+            <div class="filter-item">
+              <input type="checkbox">
+              <div class="checkbox-custom"></div>
+              <span>Risk Alerts</span>
+            </div>
+          </div>
+
+          <!-- SEARCH -->
+          <div class="section">
+            <div class="section-title">🔎 Vessel Search</div>
+            <input placeholder="Search by name..." style="width: 100%; margin-bottom: 10px;">
+            <input placeholder="Search by MMSI..." style="width: 100%; margin-bottom: 10px;">
+          </div>
+
+        </div>
+      </div>
+
+      <!-- MAP -->
+      <div class="map-area">
+        <div id="map"></div>
+        <div class="map-overlay">
+          <div class="overlay-title">Legend</div>
+          <div class="legend-item">
+            <div class="legend-color" style="background: #2563eb;"></div>
+            <span>Selected Vessel</span>
+          </div>
+          <div class="legend-item">
+            <div class="legend-color" style="background: #6b7280;"></div>
+            <span>Tracked Vessels</span>
+          </div>
+          <div class="legend-item">
+            <div class="legend-color" style="background: #10b981;"></div>
+            <span>Safe Status</span>
+          </div>
+          <div class="legend-item">
+            <div class="legend-color" style="background: #dc2626;"></div>
+            <span>Risk Alert</span>
+          </div>
+          <div class="legend-item">
+            <div class="legend-color" style="background: #2563eb; border: 2px dashed;"></div>
+            <span>Predicted Route</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- RIGHT PANEL: DETAILS & ANALYTICS -->
+      <div class="right-panel">
+        <div class="panel-header">Analytics & Details</div>
+        <div class="panel-content">
+
+          <!-- VESSEL DETAILS -->
+          <div class="section" id="vesselDetailsSection" style="display: none;">
+            <div class="section-title">📋 Selected Vessel</div>
+            <div id="selectedVesselContent"></div>
+          </div>
+
+          <!-- NO SELECTION -->
+          <div class="section" id="noSelectionSection">
+            <div class="no-data">
+              Select a vessel to view details and advanced analytics
+            </div>
+          </div>
+
+          <!-- ANALYTICS -->
+          <div class="section">
+            <div class="section-title">📊 Fleet Analytics</div>
+            <div class="metric-grid">
+              <div class="metric-box">
+                <div class="metric-value" id="metricMaxSpeed">0</div>
+                <div class="metric-label">Max Speed</div>
+              </div>
+              <div class="metric-box">
+                <div class="metric-value" id="metricAvgSpeed">0</div>
+                <div class="metric-label">Avg Speed</div>
+              </div>
+              <div class="metric-box">
+                <div class="metric-value" id="metricMoving">0</div>
+                <div class="metric-label">Moving</div>
+              </div>
+              <div class="metric-box">
+                <div class="metric-value" id="metricAnchored">0</div>
+                <div class="metric-label">Anchored</div>
+              </div>
+            </div>
+          </div>
+
+          <!-- ALERTS -->
+          <div class="section">
+            <div class="section-title">🚨 System Alerts</div>
+            <div id="alertsContainer">
+              <div class="alert alert-success">
+                <strong>✓ System Online</strong><br>
+                All systems operational
+              </div>
+            </div>
+          </div>
+
+          <!-- STATISTICS -->
+          <div class="section">
+            <div class="section-title">📈 Statistics</div>
+            <div style="font-size: 11px; color: var(--text-secondary);">
+              <div style="display: flex; justify-content: space-between; margin-bottom: 8px;">
+                <span>Coverage Area:</span>
+                <strong style="color: var(--text-primary);">1.0° × 1.0°</strong>
+              </div>
+              <div style="display: flex; justify-content: space-between; margin-bottom: 8px;">
+                <span>Data Source:</span>
+                <strong style="color: var(--text-primary);">AISStream</strong>
+              </div>
+              <div style="display: flex; justify-content: space-between; margin-bottom: 8px;">
+                <span>Update Rate:</span>
+                <strong style="color: var(--text-primary);">2 Hz</strong>
+              </div>
+              <div style="display: flex; justify-content: space-between;">
+                <span>Session Time:</span>
+                <strong style="color: var(--text-primary);" id="sessionTime">0:00</strong>
+              </div>
+            </div>
+          </div>
+
+        </div>
+      </div>
+
+    </div>
+
+  </div>
+
+  <script src="./js/app.js"></script>
+
+</body>
+
+</html>
