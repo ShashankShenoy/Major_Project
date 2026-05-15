@@ -666,22 +666,236 @@
       flex-shrink: 0;
     }
 
-    /* ─────────────── NO DATA ─────────────── */
+    /* ─────────────── SEARCH RESULTS ─────────────── */
 
-    .no-data {
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      height: 100%;
-      padding: 40px;
-      text-align: center;
-      color: var(--text-secondary);
-      font-size: 12px;
-      line-height: 1.6;
+    .search-result {
+      padding: 6px;
+      border-radius: 4px;
+      cursor: pointer;
+      background: var(--bg-2);
+      margin-bottom: 4px;
+      transition: all 0.2s;
+      border: 1px solid var(--border);
     }
 
-    body.dark-mode .no-data {
-      color: var(--text-tertiary);
+    body.dark-mode .search-result {
+      background: var(--bg-dark-2);
+      border-color: var(--border-dark);
+    }
+
+    .search-result:hover {
+      background: var(--bg-3);
+      border-color: var(--primary);
+    }
+
+    body.dark-mode .search-result:hover {
+      background: var(--bg-dark-3);
+    }
+
+    .saved-location-btn {
+      padding: 6px 8px;
+      border-radius: 4px;
+      font-size: 11px;
+      border: 1px solid var(--border);
+      background: var(--bg-2);
+      color: var(--text-primary);
+      cursor: pointer;
+      transition: all 0.2s;
+      width: 100%;
+      text-align: left;
+    }
+
+    body.dark-mode .saved-location-btn {
+      background: var(--bg-dark-2);
+      border-color: var(--border-dark);
+      color: var(--text-light);
+    }
+
+    .saved-location-btn:hover {
+      background: var(--primary);
+      color: white;
+      border-color: var(--primary);
+    }
+
+    /* ─────────────── MODAL ─────────────── */
+
+    .modal {
+      display: none;
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: rgba(0, 0, 0, 0.5);
+      z-index: 1000;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .modal.active {
+      display: flex;
+    }
+
+    .modal-content {
+      background: var(--bg-0);
+      border-radius: 8px;
+      padding: 24px;
+      max-width: 600px;
+      width: 90%;
+      max-height: 80vh;
+      overflow-y: auto;
+      box-shadow: 0 20px 25px rgba(0, 0, 0, 0.15);
+    }
+
+    body.dark-mode .modal-content {
+      background: var(--bg-dark-1);
+    }
+
+    .modal-header {
+      font-size: 16px;
+      font-weight: 700;
+      margin-bottom: 16px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .modal-close {
+      background: none;
+      border: none;
+      font-size: 20px;
+      cursor: pointer;
+      color: var(--text-secondary);
+    }
+
+    .modal-close:hover {
+      color: var(--text-primary);
+    }
+
+    /* ─────────────── TOAST ─────────────── */
+
+    .toast {
+      position: fixed;
+      bottom: 20px;
+      right: 20px;
+      background: var(--primary);
+      color: white;
+      padding: 12px 16px;
+      border-radius: 6px;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+      font-size: 12px;
+      animation: slideIn 0.3s ease;
+      z-index: 1001;
+    }
+
+    @keyframes slideIn {
+      from {
+        transform: translateX(400px);
+        opacity: 0;
+      }
+      to {
+        transform: translateX(0);
+        opacity: 1;
+      }
+    }
+
+    /* ─────────────── COMPARISON VIEW ─────────────── */
+
+    .comparison-container {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+      margin-bottom: 12px;
+    }
+
+    .comparison-item {
+      background: var(--bg-2);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 10px;
+      font-size: 11px;
+    }
+
+    body.dark-mode .comparison-item {
+      background: var(--bg-dark-2);
+      border-color: var(--border-dark);
+    }
+
+    /* ─────────────── DATA SOURCE BADGES ─────────────── */
+
+    .source-badge {
+      display: inline-block;
+      padding: 3px 8px;
+      border-radius: 4px;
+      font-size: 10px;
+      font-weight: 600;
+      margin-right: 6px;
+      margin-bottom: 4px;
+    }
+
+    .source-ais {
+      background: #dbeafe;
+      color: #1e40af;
+    }
+
+    body.dark-mode .source-ais {
+      background: rgba(30, 64, 175, 0.3);
+      color: #93c5fd;
+    }
+
+    .source-cv {
+      background: #ddd6fe;
+      color: #7c3aed;
+    }
+
+    body.dark-mode .source-cv {
+      background: rgba(124, 58, 237, 0.3);
+      color: #c4b5fd;
+    }
+
+    .source-lstm {
+      background: #fce7f3;
+      color: #be185d;
+    }
+
+    body.dark-mode .source-lstm {
+      background: rgba(190, 24, 93, 0.3);
+      color: #fbcfe8;
+    }
+
+    .confidence-bar {
+      width: 100%;
+      height: 6px;
+      background: var(--bg-3);
+      border-radius: 3px;
+      overflow: hidden;
+      margin-top: 4px;
+    }
+
+    body.dark-mode .confidence-bar {
+      background: var(--bg-dark-2);
+    }
+
+    .confidence-fill {
+      height: 100%;
+      background: linear-gradient(90deg, #1e40af, #3b82f6);
+      border-radius: 3px;
+    }
+
+    /* ─────────────── ANOMALY BADGE ─────────────── */
+
+    .anomaly-item {
+      background: var(--bg-2);
+      border: 1px solid var(--warning);
+      border-radius: 6px;
+      padding: 8px;
+      margin-bottom: 8px;
+      font-size: 11px;
+    }
+
+    body.dark-mode .anomaly-item {
+      background: rgba(220, 38, 38, 0.1);
+      border-color: var(--warning);
     }
 
   </style>
@@ -726,6 +940,20 @@
         <div class="panel-header">Controls & Search</div>
         <div class="panel-content">
 
+          <!-- SEARCH SECTION -->
+          <div class="section">
+            <div class="section-title">Quick Search</div>
+            <input id="vesselSearch" placeholder="Vessel name or MMSI..." style="width: 100%; margin-bottom: 8px;">
+            <div id="searchResults" style="max-height: 120px; overflow-y: auto; font-size: 11px;"></div>
+          </div>
+
+          <!-- SAVED LOCATIONS -->
+          <div class="section">
+            <div class="section-title">Saved Locations</div>
+            <div id="savedLocations" style="display: flex; flex-direction: column; gap: 6px; margin-bottom: 8px;"></div>
+            <button onclick="saveCurrentLocation()" class="button-secondary" style="width: 100%; font-size: 11px;">Save This Location</button>
+          </div>
+
           <!-- TRACKING SECTION -->
           <div class="section">
             <div class="section-title">Tracking Area</div>
@@ -769,32 +997,15 @@
             </div>
           </div>
 
-          <!-- ADVANCED FILTERS -->
+          <!-- TOOLS -->
           <div class="section">
-            <div class="section-title">Advanced Filters</div>
-            <select style="width: 100%; margin-bottom: 8px;">
-              <option>All Vessel Types</option>
-              <option>Container Ships</option>
-              <option>Tankers</option>
-              <option>Bulk Carriers</option>
-              <option>Passenger Ships</option>
-              <option>Fishing Vessels</option>
-            </select>
-            <div class="filter-item">
-              <input type="checkbox">
-              <div class="checkbox-custom"></div>
-              <span>Speed > 5 kts</span>
-            </div>
-            <div class="filter-item">
-              <input type="checkbox">
-              <div class="checkbox-custom"></div>
-              <span>Anchored Only</span>
-            </div>
-            <div class="filter-item">
-              <input type="checkbox">
-              <div class="checkbox-custom"></div>
-              <span>Risk Alerts</span>
-            </div>
+            <div class="section-title">Tools</div>
+            <button onclick="enableMeasurementMode()" class="button-secondary" style="width: 100%; margin-bottom: 6px; font-size: 11px;">Measure Distance</button>
+            <button onclick="toggleComparisonMode()" class="button-secondary" style="width: 100%; margin-bottom: 6px; font-size: 11px;">Compare Vessels</button>
+            <button onclick="downloadSessionData()" class="button-secondary" style="width: 100%; margin-bottom: 6px; font-size: 11px;">Export Session (CSV)</button>
+            <button onclick="showDataSourceDashboard()" class="button-secondary" style="width: 100%; margin-bottom: 6px; font-size: 11px;">Data Sources</button>
+            <button onclick="toggleAnomalyDetection()" class="button-secondary" style="width: 100%; margin-bottom: 6px; font-size: 11px;">Anomalies</button>
+            <button onclick="showKeyboardShortcuts()" class="button-secondary" style="width: 100%; font-size: 11px;">Help & Shortcuts</button>
           </div>
 
           <!-- SEARCH -->
@@ -844,6 +1055,12 @@
           <div class="section" id="vesselDetailsSection" style="display: none;">
             <div class="section-title">Selected Vessel</div>
             <div id="selectedVesselContent"></div>
+            <div style="margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--border);">
+              <div style="font-size: 10px; text-transform: uppercase; color: var(--text-secondary); margin-bottom: 8px;">Actions</div>
+              <button onclick="goToVessel()" class="button-secondary" style="width: 100%; font-size: 11px; margin-bottom: 6px;">Center on Vessel</button>
+              <button onclick="addToComparison()" class="button-secondary" style="width: 100%; font-size: 11px; margin-bottom: 6px;">Add to Comparison</button>
+              <button onclick="exportVesselData()" class="button-secondary" style="width: 100%; font-size: 11px;">Export Vessel Track</button>
+            </div>
           </div>
 
           <!-- NO SELECTION -->
@@ -887,6 +1104,30 @@
             </div>
           </div>
 
+          <!-- ALERT THRESHOLDS -->
+          <div class="section">
+            <div class="section-title">Alert Configuration</div>
+            <div style="font-size: 11px; line-height: 1.6;">
+              <div style="margin-bottom: 10px;">
+                <label style="display: block; margin-bottom: 3px; color: var(--text-secondary);">Speed Limit (knots)</label>
+                <input id="speedAlertThreshold" type="number" value="15" style="width: 100%; padding: 6px; font-size: 11px;">
+              </div>
+              <div style="margin-bottom: 10px;">
+                <label style="display: block; margin-bottom: 3px; color: var(--text-secondary);">Collision Range (km)</label>
+                <input id="collisionRangeThreshold" type="number" value="5" step="0.5" style="width: 100%; padding: 6px; font-size: 11px;">
+              </div>
+              <div style="margin-bottom: 10px;">
+                <label style="display: block; margin-bottom: 3px; color: var(--text-secondary);">Port Proximity (km)</label>
+                <input id="portProximityThreshold" type="number" value="10" step="0.5" style="width: 100%; padding: 6px; font-size: 11px;">
+              </div>
+              <div style="margin-bottom: 10px;">
+                <label style="display: block; margin-bottom: 3px; color: var(--text-secondary);">Min CV Confidence (%)</label>
+                <input id="minCVConfidence" type="number" value="60" min="0" max="100" style="width: 100%; padding: 6px; font-size: 11px;">
+              </div>
+              <button onclick="updateAlertThresholds()" class="button-secondary" style="width: 100%; font-size: 11px;">Update Thresholds</button>
+            </div>
+          </div>
+
           <!-- STATISTICS -->
           <div class="section">
             <div class="section-title">Statistics</div>
@@ -915,6 +1156,87 @@
 
     </div>
 
+  </div>
+
+  <!-- MODALS -->
+  <div id="helpModal" class="modal">
+    <div class="modal-content">
+      <div class="modal-header">
+        Keyboard Shortcuts & Help
+        <button class="modal-close" onclick="closeModal('helpModal')">×</button>
+      </div>
+      <div style="font-size: 12px; line-height: 1.8;">
+        <div style="margin-bottom: 16px;">
+          <strong style="display: block; margin-bottom: 8px;">Navigation</strong>
+          <div style="margin-left: 12px;">
+            Ctrl+F - Quick search<br>
+            Ctrl+S - Save location<br>
+            Ctrl+E - Export data<br>
+            Ctrl+M - Measure distance<br>
+            Ctrl+C - Compare vessels<br>
+            Ctrl+H - Show this help
+          </div>
+        </div>
+        <div style="margin-bottom: 16px;">
+          <strong style="display: block; margin-bottom: 8px;">Map Controls</strong>
+          <div style="margin-left: 12px;">
+            Click vessel - Select it<br>
+            Double-click vessel - Center map<br>
+            Scroll - Zoom in/out<br>
+            Drag - Pan the map
+          </div>
+        </div>
+        <div>
+          <strong style="display: block; margin-bottom: 8px;">Tips</strong>
+          <div style="margin-left: 12px;">
+            Save frequently used locations for quick access<br>
+            Adjust alert thresholds for your use case<br>
+            Use comparison mode to track multiple vessels<br>
+            Export sessions for historical analysis
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div id="comparisonModal" class="modal">
+    <div class="modal-content">
+      <div class="modal-header">
+        Vessel Comparison
+        <button class="modal-close" onclick="closeModal('comparisonModal')">×</button>
+      </div>
+      <div id="comparisonContent"></div>
+    </div>
+  </div>
+
+  <div id="dataSourceModal" class="modal">
+    <div class="modal-content">
+      <div class="modal-header">
+        Data Source Dashboard
+        <button class="modal-close" onclick="closeModal('dataSourceModal')">×</button>
+      </div>
+      <div id="dataSourceContent"></div>
+    </div>
+  </div>
+
+  <div id="anomalyModal" class="modal">
+    <div class="modal-content">
+      <div class="modal-header">
+        Anomaly Detection
+        <button class="modal-close" onclick="closeModal('anomalyModal')">×</button>
+      </div>
+      <div id="anomalyContent"></div>
+    </div>
+  </div>
+
+  <div id="fusionModal" class="modal">
+    <div class="modal-content">
+      <div class="modal-header">
+        Multi-Source Fusion Analysis
+        <button class="modal-close" onclick="closeModal('fusionModal')">×</button>
+      </div>
+      <div id="fusionContent"></div>
+    </div>
   </div>
 
   <script src="./js/app.js"></script>

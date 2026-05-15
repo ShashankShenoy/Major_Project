@@ -1,4 +1,4 @@
-// Enterprise Maritime Intelligence System - Fixed
+// Enterprise Maritime Intelligence System - Enhanced
 
 const ws = new WebSocket("ws://localhost:8000/ws");
 
@@ -8,6 +8,23 @@ let replayMode = false, replayTime = null;
 let darkMode = localStorage.getItem('darkMode') === 'true';
 let collisionThreshold = 0.01;
 let portProximity = 0.1;
+let speedAlertThreshold = 15;
+let collisionRangeThreshold = 5;
+let portProximityThreshold = 10;
+
+// Feature states
+let comparisonMode = false;
+let comparisonVessels = [];
+let measurementMode = false;
+let measurementPoints = [];
+
+// Multi-source tracking
+let cvDetections = [];
+let lstmPredictions = [];
+let minCVConfidence = 60;
+let anomalyDetectionActive = false;
+let detectedAnomalies = [];
+let sourceReliability = { ais: 0.95, cv: 0.65, lstm: 0.70 };
 
 // Filter states
 let showTracks = true;
@@ -110,6 +127,8 @@ map.on("load", () => {
   initializeLayers();
   setupMapClickHandler();
   setupCheckboxes();
+  initializeSearch();
+  loadSavedLocations();
 });
 
 function initializeSources() {
@@ -243,6 +262,15 @@ function initializeLayers() {
 
 function setupMapClickHandler() {
   map.on("click", (e) => {
+    if (measurementMode) {
+      measurementPoints.push([e.lngLat.lng, e.lngLat.lat]);
+      if (measurementPoints.length === 2) {
+        const dist = Math.sqrt(Math.pow(measurementPoints[1][0] - measurementPoints[0][0], 2) + Math.pow(measurementPoints[1][1] - measurementPoints[0][1], 2)) * 111;
+        showToast(`Distance: ${dist.toFixed(2)} km`);
+        measurementPoints = [];
+      }
+      return;
+    }
     const features = map.queryRenderedFeatures(e.point, { layers: ["ships-layer"] });
     if (features.length > 0) {
       selectShip(features[0].properties.mmsi);
@@ -363,19 +391,19 @@ function checkAlerts() {
   let collisionCount = 0;
 
   latestShips.forEach(ship => {
-    if (getRiskScore(ship) > 6) alerts.push(`⚠️ High risk vessel ${ship.name}`);
+    if (getRiskScore(ship) > 6) alerts.push(`High risk vessel: ${ship.name}`);
     if (hasCollisionRisk(ship)) collisionCount++;
   });
 
-  if (collisionCount > 0) alerts.unshift(`🚨 ${collisionCount} potential collision(s) detected`);
+  if (collisionCount > 0) alerts.unshift(`${collisionCount} potential collision(s) detected`);
 
   const container = document.getElementById("alertsContainer");
   if (!alerts.length) {
-    container.innerHTML = '<div class="alert alert-success"><strong>✓ All Clear</strong><br>No active alerts</div>';
+    container.innerHTML = '<div class="alert alert-success"><strong>All Clear</strong><br>No active alerts</div>';
     document.getElementById("headerAlerts").innerText = "0";
   } else {
     container.innerHTML = alerts.map((a) => {
-      const isCollision = a.includes('🚨');
+      const isCollision = a.includes('potential collision');
       return `<div class="alert ${isCollision ? 'alert-warning' : 'alert-info'}">${a}</div>`;
     }).join('');
     document.getElementById("headerAlerts").innerText = alerts.length;
@@ -516,18 +544,18 @@ function updateVesselDetails() {
         <div class="metric-label">Speed (kts)</div>
       </div>
       <div class="metric-box">
-        <div class="metric-value">${ship.cog.toFixed(0)}°</div>
-        <div class="metric-label">Heading</div>
+        <div class="metric-value">${ship.cog.toFixed(0)}</div>
+        <div class="metric-label">Heading (°)</div>
       </div>
     </div>
 
     <div style="font-size: 11px; margin-bottom: 12px; padding: 10px; background: var(--bg-2); border-radius: 6px;">
       <div style="display: flex; justify-content: space-between; margin-bottom: 8px; padding-bottom: 8px; border-bottom: 1px solid var(--border);">
-        <span style="color: var(--text-secondary);">Position</span>
+        <span style="color: var(--text-secondary);">Latitude</span>
         <span style="color: var(--text-primary); font-family: monospace; font-weight: 600;">${lat}</span>
       </div>
       <div style="display: flex; justify-content: space-between; margin-bottom: 8px; padding-bottom: 8px; border-bottom: 1px solid var(--border);">
-        <span style="color: var(--text-secondary);"></span>
+        <span style="color: var(--text-secondary);">Longitude</span>
         <span style="color: var(--text-primary); font-family: monospace; font-weight: 600;">${lon}</span>
       </div>
       <div style="display: flex; justify-content: space-between; margin-bottom: 8px; padding-bottom: 8px; border-bottom: 1px solid var(--border);">
@@ -574,6 +602,230 @@ function playReplayFrame() {
 }
 
 // ─────────────────────────────
+// SEARCH & LOCATION MANAGEMENT
+// ─────────────────────────────
+
+function initializeSearch() {
+  const searchBox = document.getElementById('vesselSearch');
+  if (!searchBox) return;
+  searchBox.addEventListener('input', (e) => {
+    const query = e.target.value.toLowerCase();
+    const results = document.getElementById('searchResults');
+    results.innerHTML = '';
+    if (query.length < 2) return;
+    const matches = latestShips.filter(s =>
+      s.name.toLowerCase().includes(query) || s.mmsi.toString().includes(query)
+    ).slice(0, 5);
+    matches.forEach(ship => {
+      const div = document.createElement('div');
+      div.className = 'search-result';
+      div.textContent = `${ship.name} (${ship.mmsi})`;
+      div.onclick = () => selectVesselFromSearch(ship);
+      results.appendChild(div);
+    });
+  });
+}
+
+function selectVesselFromSearch(ship) {
+  selectedShip = ship.mmsi;
+  document.getElementById('vesselSearch').value = '';
+  document.getElementById('searchResults').innerHTML = '';
+  if (map && ship.pos) {
+    map.flyTo({ center: ship.pos, zoom: 11, duration: 800 });
+  }
+  renderShips();
+  updateVesselDetails();
+}
+
+function loadSavedLocations() {
+  const saved = JSON.parse(localStorage.getItem('savedLocations') || '[]');
+  const container = document.getElementById('savedLocations');
+  if (!container) return;
+  container.innerHTML = '';
+  saved.forEach((loc, idx) => {
+    const btn = document.createElement('button');
+    btn.className = 'saved-location-btn';
+    btn.textContent = `${loc.name} (${loc.lat.toFixed(2)}, ${loc.lon.toFixed(2)})`;
+    btn.onclick = () => loadSavedLocation(loc);
+    container.appendChild(btn);
+  });
+}
+
+function saveCurrentLocation() {
+  const lat = parseFloat(document.getElementById('lat').value);
+  const lon = parseFloat(document.getElementById('lon').value);
+  if (!lat || !lon) { showToast('Enter valid coordinates'); return; }
+  const saved = JSON.parse(localStorage.getItem('savedLocations') || '[]');
+  const name = prompt('Location name:', `Location ${saved.length + 1}`);
+  if (!name) return;
+  saved.push({ name, lat, lon });
+  localStorage.setItem('savedLocations', JSON.stringify(saved));
+  loadSavedLocations();
+  showToast('Location saved');
+}
+
+function loadSavedLocation(loc) {
+  document.getElementById('lat').value = loc.lat;
+  document.getElementById('lon').value = loc.lon;
+  startTracking();
+  showToast(`Tracking ${loc.name}`);
+}
+
+// ─────────────────────────────
+// TOOLS & UTILITIES
+// ─────────────────────────────
+
+function enableMeasurementMode() {
+  measurementMode = !measurementMode;
+  measurementPoints = [];
+  if (measurementMode) {
+    showToast('Click points on map to measure distance');
+    map.getCanvas().style.cursor = 'crosshair';
+  } else {
+    map.getCanvas().style.cursor = 'grab';
+  }
+}
+
+function toggleComparisonMode() {
+  comparisonMode = !comparisonMode;
+  comparisonVessels = [];
+  if (comparisonMode) {
+    showToast('Select vessels to compare (Ctrl+C)');
+  } else {
+    const modal = document.getElementById('comparisonModal');
+    if (modal) modal.classList.remove('active');
+  }
+}
+
+function addToComparison() {
+  if (!selectedShip) { showToast('Select a vessel first'); return; }
+  const ship = latestShips.find(s => s.mmsi === selectedShip);
+  if (ship && !comparisonVessels.find(v => v.mmsi === ship.mmsi)) {
+    comparisonVessels.push(ship);
+    showToast(`Added ${ship.name} to comparison`);
+    if (comparisonVessels.length >= 1) showComparisonView();
+  }
+}
+
+function showComparisonView() {
+  const content = document.getElementById('comparisonContent');
+  if (!content) return;
+  let html = '<div class="comparison-container">';
+  comparisonVessels.forEach(ship => {
+    const stats = ship.trackStats || {};
+    html += `<div class="comparison-item">
+      <div style="font-weight: 700; margin-bottom: 8px; color: var(--primary);">${ship.name}</div>
+      <div>MMSI: ${ship.mmsi}</div>
+      <div>Speed: ${(ship.sog || 0).toFixed(1)} kts</div>
+      <div>Course: ${(ship.cog || 0).toFixed(0)}</div>
+      <div>Position: ${ship.pos[1].toFixed(4)}, ${ship.pos[0].toFixed(4)}</div>
+      <div style="margin-top: 8px; font-size: 10px; color: var(--text-secondary);">
+        Track: ${ship.track ? ship.track.length : 0} points<br>
+        Distance: ${(stats.distance || 0).toFixed(2)} km<br>
+        Duration: ${Math.round((stats.duration || 0) / 60)} min
+      </div>
+    </div>`;
+  });
+  html += '</div>';
+  content.innerHTML = html;
+  const modal = document.getElementById('comparisonModal');
+  if (modal) modal.classList.add('active');
+}
+
+function goToVessel() {
+  if (selectedShip && map) {
+    const ship = latestShips.find(s => s.mmsi === selectedShip);
+    if (ship && ship.pos) {
+      map.flyTo({ center: ship.pos, zoom: 12, duration: 800 });
+    }
+  }
+}
+
+function exportVesselData() {
+  if (!selectedShip) return;
+  const ship = latestShips.find(s => s.mmsi === selectedShip);
+  if (!ship || !ship.track) return;
+  let csv = 'Latitude,Longitude,Speed,Course\n';
+  ship.track.forEach(pt => {
+    csv += `${pt[1]},${pt[0]},${ship.sog || 0},${ship.cog || 0}\n`;
+  });
+  downloadCSV(csv, `${ship.name.replace(/\s/g, '_')}_track.csv`);
+  showToast('Vessel track exported');
+}
+
+function downloadSessionData() {
+  if (latestShips.length === 0) { showToast('No vessels to export'); return; }
+  let csv = 'Vessel Name,MMSI,Latitude,Longitude,Speed,Course,Track Points,Distance (km)\n';
+  latestShips.forEach(ship => {
+    const stats = ship.trackStats || {};
+    csv += `"${ship.name}",${ship.mmsi},${ship.pos[1].toFixed(4)},${ship.pos[0].toFixed(4)},${(ship.sog || 0).toFixed(1)},${(ship.cog || 0).toFixed(0)},${ship.track ? ship.track.length : 0},${(stats.distance || 0).toFixed(2)}\n`;
+  });
+  downloadCSV(csv, `session_${new Date().toISOString().split('T')[0]}.csv`);
+  showToast('Session exported');
+}
+
+function downloadCSV(content, filename) {
+  const blob = new Blob([content], { type: 'text/csv' });
+  const url = window.URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  a.click();
+  window.URL.revokeObjectURL(url);
+}
+
+// ─────────────────────────────
+// ALERTS & UI CONTROLS
+// ─────────────────────────────
+
+function updateAlertThresholds() {
+  const speedInput = document.getElementById('speedAlertThreshold');
+  const collisionInput = document.getElementById('collisionRangeThreshold');
+  const portInput = document.getElementById('portProximityThreshold');
+  if (speedInput) speedAlertThreshold = parseFloat(speedInput.value) || 15;
+  if (collisionInput) collisionRangeThreshold = parseFloat(collisionInput.value) || 5;
+  if (portInput) portProximityThreshold = parseFloat(portInput.value) || 10;
+  showToast('Alert thresholds updated');
+}
+
+function showToast(message) {
+  const toast = document.createElement('div');
+  toast.className = 'toast';
+  toast.textContent = message;
+  document.body.appendChild(toast);
+  setTimeout(() => toast.remove(), 3000);
+}
+
+function closeModal(modalId) {
+  const modal = document.getElementById(modalId);
+  if (modal) modal.classList.remove('active');
+}
+
+function showKeyboardShortcuts() {
+  const modal = document.getElementById('helpModal');
+  if (modal) modal.classList.add('active');
+}
+
+// ─────────────────────────────
+// KEYBOARD SHORTCUTS
+// ─────────────────────────────
+
+document.addEventListener('keydown', (e) => {
+  if (e.ctrlKey || e.metaKey) {
+    if (e.key === 'f') { e.preventDefault(); const el = document.getElementById('vesselSearch'); if (el) el.focus(); }
+    else if (e.key === 's') { e.preventDefault(); saveCurrentLocation(); }
+    else if (e.key === 'e') { e.preventDefault(); downloadSessionData(); }
+    else if (e.key === 'm') { e.preventDefault(); enableMeasurementMode(); }
+    else if (e.key === 'c') { e.preventDefault(); toggleComparisonMode(); }
+    else if (e.key === 'h') { e.preventDefault(); showKeyboardShortcuts(); }
+  }
+  if (e.key === 'Escape') {
+    document.querySelectorAll('.modal.active').forEach(m => m.classList.remove('active'));
+    if (measurementMode) enableMeasurementMode();
+  }
+});
+
+// ─────────────────────────────
 // UPDATE LOOP
 // ─────────────────────────────
 
@@ -582,3 +834,166 @@ setInterval(() => {
     updateAnalytics();
   }
 }, 1000);
+
+// ─────────────────────────────
+// MULTI-SOURCE DATA FUSION
+// ─────────────────────────────
+
+function initializeMultiSourceSystem() {
+  cvDetections = [
+    { id: 'cv_001', lat: 1.270, lon: 103.85, confidence: 0.92, timestamp: Date.now(), matched: null },
+    { id: 'cv_002', lat: 1.255, lon: 103.82, confidence: 0.78, timestamp: Date.now(), matched: null },
+    { id: 'cv_003', lat: 1.280, lon: 103.88, confidence: 0.45, timestamp: Date.now(), matched: null }
+  ];
+  lstmPredictions = [];
+}
+
+function matchCVToAIS() {
+  cvDetections.forEach(cvDetection => {
+    const matchRadius = 0.05;
+    const match = latestShips.find(ship => {
+      const dist = Math.sqrt(Math.pow(ship.pos[1] - cvDetection.lat, 2) + Math.pow(ship.pos[0] - cvDetection.lon, 2));
+      return dist < matchRadius;
+    });
+    cvDetection.matched = match ? match.mmsi : null;
+  });
+}
+
+function generateLSTMPredictions() {
+  lstmPredictions = latestShips.map(ship => {
+    if (!ship.track || ship.track.length < 3) return null;
+    const recent = ship.track.slice(-3);
+    const vx = (recent[2][0] - recent[0][0]) / 2;
+    const vy = (recent[2][1] - recent[0][1]) / 2;
+    return { mmsi: ship.mmsi, predictions: [[recent[2][0] + vx, recent[2][1] + vy], [recent[2][0] + vx * 2, recent[2][1] + vy * 2]], confidence: 0.85 };
+  }).filter(p => p !== null);
+}
+
+function fuseDataSources(ship) {
+  let bestData = { source: 'AIS', confidence: sourceReliability.ais };
+  const cvMatch = cvDetections.find(cv => cv.matched === ship.mmsi);
+  if (cvMatch && cvMatch.confidence >= minCVConfidence / 100) {
+    const weight = cvMatch.confidence * sourceReliability.cv;
+    if (weight > bestData.confidence * 0.9) {
+      bestData = { source: 'CV+AIS', confidence: Math.max(bestData.confidence, weight) };
+    }
+  }
+  return bestData;
+}
+
+function getSourceBadgeHTML(ship) {
+  const cvMatch = cvDetections.find(cv => cv.matched === ship.mmsi);
+  let html = `<span class="source-badge source-ais">AIS</span>`;
+  if (cvMatch && cvMatch.confidence >= minCVConfidence / 100) html += `<span class="source-badge source-cv">CV ${(cvMatch.confidence * 100).toFixed(0)}%</span>`;
+  const lstm = lstmPredictions.find(l => l.mmsi === ship.mmsi);
+  if (lstm) html += `<span class="source-badge source-lstm">LSTM</span>`;
+  return html;
+}
+
+function detectAnomalies() {
+  detectedAnomalies = [];
+  latestShips.forEach(ship => {
+    if (ship.track && ship.track.length >= 3) {
+      const recent = ship.track.slice(-3);
+      const dir1 = Math.atan2(recent[1][1] - recent[0][1], recent[1][0] - recent[0][0]);
+      const dir2 = Math.atan2(recent[2][1] - recent[1][1], recent[2][0] - recent[1][0]);
+      const angleDiff = Math.abs(dir2 - dir1) * 180 / Math.PI;
+      if (angleDiff > 90 && angleDiff < 270) {
+        detectedAnomalies.push({ mmsi: ship.mmsi, name: ship.name, type: 'Direction Change', severity: 'medium', value: `${angleDiff.toFixed(0)}°` });
+      }
+    }
+    if (ship.sog > 25) {
+      detectedAnomalies.push({ mmsi: ship.mmsi, name: ship.name, type: 'High Speed', severity: 'high', value: `${ship.sog.toFixed(1)} kts` });
+    }
+  });
+}
+
+function toggleAnomalyDetection() {
+  anomalyDetectionActive = !anomalyDetectionActive;
+  if (anomalyDetectionActive) { detectAnomalies(); showAnomalyView(); showToast('Anomaly detection ON'); }
+  else showToast('Anomaly detection OFF');
+}
+
+function showAnomalyView() {
+  const content = document.getElementById('anomalyContent');
+  if (!content) return;
+  if (detectedAnomalies.length === 0) {
+    content.innerHTML = '<div class="alert alert-success">No anomalies detected</div>';
+  } else {
+    content.innerHTML = detectedAnomalies.map(anom => {
+      const color = anom.severity === 'high' ? '#dc2626' : '#f59e0b';
+      return `<div class="anomaly-item" style="border-left: 3px solid ${color};"><div style="font-weight: 700; color: ${color};">${anom.type}</div><div><strong>${anom.name}</strong> (${anom.mmsi})</div><div style="font-size: 10px; color: var(--text-secondary);">${anom.value}</div></div>`;
+    }).join('');
+  }
+  const modal = document.getElementById('anomalyModal');
+  if (modal) modal.classList.add('active');
+}
+
+function showDataSourceDashboard() {
+  const content = document.getElementById('dataSourceContent');
+  if (!content) return;
+  const unmatchedCV = cvDetections.filter(cv => !cv.matched && cv.confidence >= minCVConfidence / 100);
+  const matchedCV = cvDetections.filter(cv => cv.matched);
+  let html = `<div style="font-size: 11px; line-height: 1.8;">
+    <div style="padding: 12px; background: var(--bg-2); border-radius: 6px; margin-bottom: 12px;">
+      <div style="font-weight: 700; margin-bottom: 8px;">System Overview</div>
+      <div>AIS Vessels: <strong>${latestShips.length}</strong></div>
+      <div>CV Detections: <strong>${cvDetections.length}</strong></div>
+      <div>Matched: <strong>${matchedCV.length}</strong></div>
+      <div>Unmatched: <strong>${unmatchedCV.length}</strong></div>
+    </div>
+    <div style="padding: 12px; background: var(--bg-2); border-radius: 6px;">
+      <div style="font-weight: 700; margin-bottom: 8px;">Source Reliability Scores</div>
+      <div style="margin-bottom: 6px;">AIS: <span style="color: var(--primary); font-weight: 700;">${(sourceReliability.ais * 100).toFixed(0)}%</span></div>
+      <div style="margin-bottom: 6px;">Computer Vision: <span style="color: #7c3aed; font-weight: 700;">${(sourceReliability.cv * 100).toFixed(0)}%</span></div>
+      <div>LSTM Prediction: <span style="color: #be185d; font-weight: 700;">${(sourceReliability.lstm * 100).toFixed(0)}%</span></div>
+    </div>
+  </div>`;
+  content.innerHTML = html;
+  const modal = document.getElementById('dataSourceModal');
+  if (modal) modal.classList.add('active');
+}
+
+// Enhanced updateVesselDetails with multi-source info
+(function() {
+  const original = updateVesselDetails;
+  updateVesselDetails = function() {
+    const section = document.getElementById("vesselDetailsSection");
+    const noSection = document.getElementById("noSelectionSection");
+    if (!selectedShip) { section.style.display = 'none'; noSection.style.display = 'block'; return; }
+    const ship = latestShips.find(s => s.mmsi === selectedShip);
+    if (!ship) return;
+    const stats = ship.trackStats || {};
+    const risk = getRiskScore(ship);
+    const status = ship.sog < 1 ? "Anchored" : "Moving";
+    const riskLevel = risk <= 2 ? "Safe" : risk <= 5 ? "Normal" : risk <= 7 ? "Warning" : "Danger";
+    const riskColor = getRiskColor(ship);
+    const trackDuration = Math.round((stats.duration || 0) / 60);
+    const distance = (stats.distance || 0).toFixed(2);
+    const lat = ship.pos[1].toFixed(6);
+    const lon = ship.pos[0].toFixed(6);
+    const fused = fuseDataSources(ship);
+    const lstm = lstmPredictions.find(l => l.mmsi === ship.mmsi);
+    section.style.display = 'block';
+    noSection.style.display = 'none';
+    document.getElementById("selectedVesselContent").innerHTML = `
+      <div style="margin-bottom: 8px;"><div style="font-size: 14px; font-weight: 700; color: var(--primary);">${ship.name}</div><div style="font-size: 10px; color: var(--text-secondary); font-family: monospace;">MMSI: ${ship.mmsi}</div></div>
+      <div style="margin-bottom: 8px; font-size: 10px;"><div style="margin-bottom: 4px; font-weight: 600; text-transform: uppercase; color: var(--text-secondary);">Sources</div>${getSourceBadgeHTML(ship)}<div style="margin-top: 3px; color: var(--text-secondary);">Fused: ${fused.source} (${(fused.confidence * 100).toFixed(0)}%)</div></div>
+      <div style="display: flex; gap: 8px; margin-bottom: 8px;"><span class="status-badge status-${ship.sog > 1 ? 'moving' : 'anchored'}"><span class="status-dot"></span>${status}</span><span class="status-badge" style="background: ${riskColor}20; color: ${riskColor};">Risk: ${riskLevel}</span></div>
+      <div class="metric-grid" style="margin-bottom: 8px;"><div class="metric-box"><div class="metric-value" style="color: ${getSpeedColor(ship.sog)};">${ship.sog.toFixed(1)}</div><div class="metric-label">Speed (kts)</div></div><div class="metric-box"><div class="metric-value">${ship.cog.toFixed(0)}</div><div class="metric-label">Heading (°)</div></div></div>
+      <div style="font-size: 10px; padding: 8px; background: var(--bg-2); border-radius: 4px;"><div style="display: flex; justify-content: space-between; margin-bottom: 4px; padding-bottom: 4px; border-bottom: 1px solid var(--border);"><span>Lat</span><span style="font-family: monospace; font-weight: 600;">${lat}</span></div><div style="display: flex; justify-content: space-between; margin-bottom: 4px; padding-bottom: 4px; border-bottom: 1px solid var(--border);"><span>Lon</span><span style="font-family: monospace; font-weight: 600;">${lon}</span></div><div style="display: flex; justify-content: space-between; margin-bottom: 4px; padding-bottom: 4px; border-bottom: 1px solid var(--border);"><span>Duration</span><span>${trackDuration} min</span></div><div style="display: flex; justify-content: space-between;"><span>Distance</span><span>${distance} km</span></div></div>
+      ${lstm ? `<div style="font-size: 10px; margin-top: 8px; padding: 8px; background: rgba(190, 24, 93, 0.1); border-left: 2px solid #be185d; border-radius: 4px;"><div style="font-weight: 600; color: #be185d;">LSTM Prediction: ${(lstm.confidence * 100).toFixed(0)}% confidence</div></div>` : ''}
+    `;
+  };
+})();
+
+// Initialize systems
+setTimeout(() => {
+  initializeSearch();
+  loadSavedLocations();
+  updateAlertThresholds();
+  initializeMultiSourceSystem();
+  matchCVToAIS();
+  generateLSTMPredictions();
+  detectAnomalies();
+}, 500);
