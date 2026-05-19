@@ -1,13 +1,16 @@
 # video_processor.py
 import cv2
 import numpy as np
+from pathlib import Path
 from ultralytics import YOLO
 from collections import defaultdict, deque
 
 from config import CONFIG
 from tracker import ShipTracker
 from direction import compute_direction, heading_to_cardinal
-from predictor import predict_path_curved
+from lstm.lstm_predictor import LSTMPredictor
+from collision.collision_detector import CollisionDetector
+from output_handler import save_output
 
 # Distinct colors per ID (cycles through these)
 COLORS = [
@@ -25,7 +28,16 @@ class VideoProcessor:
     def __init__(self):
         print("Loading model...")
         self.model = YOLO(CONFIG["model_path"])
-        self.model.to("cuda")
+        try:
+            import torch
+            if torch.cuda.is_available():
+                self.model.to("cuda")
+                print("Model loaded on CUDA.")
+            else:
+                print("CUDA not available, running on CPU.")
+        except Exception as exc:
+            print(f"Warning: unable to verify CUDA availability: {exc}")
+            print("Model will run using the default device.")
 
         # Use the model's OWN class names — not config
         self.class_names = self.model.names  # dict: {0: 'person', 8: 'boat', ...}
@@ -33,11 +45,23 @@ class VideoProcessor:
         print("Initializing tracker...")
         self.ship_tracker = ShipTracker()
 
+        self.lstm_predictor = LSTMPredictor(
+            predict_steps=CONFIG["predict_steps"],
+            seq_len=CONFIG.get("lstm_seq_len", 30),
+            device=CONFIG.get("device", "cpu")
+        )
+
+        model_path = Path(CONFIG.get("lstm_model_path", "models/lstm_model_trained.pt"))
+        if model_path.exists():
+            self.lstm_predictor.load_model(str(model_path))
+        else:
+            print(f"Warning: LSTM model not found at {model_path}. Prediction will fall back to kinematic behaviour.")
+
         self.results  = []
         self.frame_num = 0
         print("Ready.")
 
-    def process_video(self, input_path, output_path):
+    def process_video(self, input_path, output_path, json_path=None):
         cap = cv2.VideoCapture(input_path)
 
         if not cap.isOpened():
@@ -84,6 +108,8 @@ class VideoProcessor:
         cap.release()
         writer.release()
         cv2.destroyAllWindows()
+        if json_path:
+            save_output(self.results, json_path)
         print(f"\nDone. Output saved to {output_path}")
         return self.results
 
@@ -95,37 +121,47 @@ class VideoProcessor:
         )[0]
 
         dets = results.boxes.data.cpu().numpy()
+        if self.frame_num % 30 == 0:
+            print(f"  Frame {self.frame_num}: {len(dets)} detections from YOLO")
+        
         ships = self.ship_tracker.update(dets, frame)
+        if self.frame_num % 30 == 0:
+            print(f"  Frame {self.frame_num}: {len(ships)} tracked ships after tracker")
 
         for ship in ships:
             history  = self.ship_tracker.get_history(ship["id"])
             heading, speed   = compute_direction(history)
             cardinal         = heading_to_cardinal(heading)
-            predicted        = predict_path_curved(history, CONFIG["predict_steps"])
 
-            ship["heading"]        = heading
-            ship["speed"]          = speed
-            ship["direction"]      = cardinal
+            ship["heading"]   = heading
+            ship["speed"]     = speed
+            ship["direction"] = cardinal
+
+            self.lstm_predictor.update(ship["id"], ship["center"][0], ship["center"][1])
+            predicted, method = self.lstm_predictor.predict(ship["id"])
+
             ship["predicted_path"] = predicted
+            ship["prediction_method"] = method
 
         frame_data = {
             "frame":      self.frame_num,
             "ship_count": len(ships),
             "ships": [
                 {
-                    "id":            s["id"],
-                    "class":         self.class_names.get(s["class_id"], "unknown"),
-                    "confidence":    s["confidence"],
-                    "center":        s["center"],
-                    "heading":       s["heading"],
-                    "speed":         s["speed"],
-                    "direction":     s["direction"],
-                    "predicted_path": s["predicted_path"]
+                    "id":                int(s["id"]),
+                    "class":             self.class_names.get(s["class_id"], "unknown"),
+                    "confidence":        float(s["confidence"]),
+                    "center":            [int(s["center"][0]), int(s["center"][1])],
+                    "box":               [int(x) for x in s["box"]],
+                    "heading":           float(s.get("heading", 0)),
+                    "speed":             float(s.get("speed", 0)),
+                    "direction":         str(s.get("direction", "--")),
+                    "predicted_path":    [[float(p[0]), float(p[1])] for p in s.get("predicted_path", [])],
+                    "prediction_method": str(s.get("prediction_method", "KIN"))
                 }
                 for s in ships
             ]
         }
-
         annotated = self._annotate(frame, ships)
         return frame_data, annotated
 
@@ -172,7 +208,12 @@ class VideoProcessor:
                 cv2.line(frame, pts[i-1], pts[i], fade, thickness)
 
             # --- Predicted path — dashed dots fading to transparent ---
-            predicted = ship["predicted_path"]
+            predicted = []
+            for point in ship.get("predicted_path", []):
+                if (isinstance(point, (list, tuple)) and len(point) == 2 and
+                        isinstance(point[0], (int, float)) and isinstance(point[1], (int, float))):
+                    predicted.append((int(point[0]), int(point[1])))
+
             for i, (px, py) in enumerate(predicted):
                 alpha  = 1 - i / max(len(predicted), 1)
                 radius = max(2, int(5 * alpha))
@@ -207,7 +248,7 @@ class VideoProcessor:
 
         return frame
     
-    def process_video_with_map(self, input_path, output_path, map_view):
+    def process_video_with_map(self, input_path, output_path, map_view, json_path=None):
         cap = cv2.VideoCapture(input_path)
         if not cap.isOpened():
             print(f"Error: cannot open {input_path}")
@@ -218,6 +259,9 @@ class VideoProcessor:
         fps   = cap.get(cv2.CAP_PROP_FPS)
         total = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
         print(f"Video: {w}x{h} @ {fps:.1f}fps — {total} frames")
+
+        self.collision_detector = CollisionDetector(fps=fps)
+        save_interval = 8
 
         writer = cv2.VideoWriter(
             output_path,
@@ -231,18 +275,41 @@ class VideoProcessor:
                 break
 
             self.frame_num += 1
-            print(f"Frame {self.frame_num}/{total}", end="\r")
+            if self.frame_num % 30 == 0:
+                print(f"\nFrame {self.frame_num}/{total}")
 
             frame_data, annotated = self._process_frame(frame)
+
+            alerts = self.collision_detector.detect_collisions(
+                frame_data["ships"], self.frame_num
+            )
+            frame_data["collision_alerts"] = [alert.__dict__ for alert in alerts]
+
+            if alerts:
+                if self.frame_num % 30 == 0:
+                    print(f"  {len(alerts)} collision alerts detected")
+                for idx, alert in enumerate(alerts[:3]):
+                    msg = (f"ALERT {alert.ship1_id}-{alert.ship2_id} "
+                           f"{alert.risk_level.upper()} {alert.time_to_cpa:.1f}s")
+                    cv2.putText(
+                        annotated, msg, (12, 70 + idx * 28),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.75, (0, 30, 220), 2, cv2.LINE_AA
+                    )
+
+            processed = map_view.update(frame_data["ships"], annotated, self.frame_num)
+            if processed:
+                processed_map = {ship["id"]: ship for ship in processed}
+                for ship in frame_data["ships"]:
+                    extra = processed_map.get(ship["id"], {})
+                    ship["gps_lat"] = extra.get("gps_lat")
+                    ship["gps_lon"] = extra.get("gps_lon")
+                    ship["prediction_method"] = ship.get("prediction_method", "KIN")
+
             self.results.append(frame_data)
             writer.write(annotated)
 
-            # Pass annotated frame AND ship data to dashboard
-            map_view.update(
-                frame_data["ships"],
-                annotated,          # ← pass the annotated video frame
-                self.frame_num
-            )
+            if json_path and self.frame_num % save_interval == 0:
+                save_output(self.results, json_path)
 
             key = cv2.waitKey(1) & 0xFF
             if key == ord('q'):
@@ -256,5 +323,31 @@ class VideoProcessor:
         cap.release()
         writer.release()
         cv2.destroyAllWindows()
-        print(f"\nDone. Saved to {output_path}")
+        
+        # Final save to JSON
+        if json_path:
+            save_output(self.results, json_path)
+            print(f"Results saved to {json_path}")
+        
+        # Print summary
+        total_ships = sum(f["ship_count"] for f in self.results)
+        unique_ids = set()
+        total_alerts = sum(len(f.get("collision_alerts", [])) for f in self.results)
+        for f in self.results:
+            for s in f.get("ships", []):
+                unique_ids.add(s["id"])
+        
+        print(f"\n╔═══════════════════════════════════════════════╗")
+        print(f"║ PIPELINE SUMMARY                            ║")
+        print(f"╠═══════════════════════════════════════════════╣")
+        print(f"║ Total Frames Processed     : {self.frame_num:>27} ║")
+        print(f"║ Total Detections           : {total_ships:>27} ║")
+        print(f"║ Unique Ship IDs            : {len(unique_ids):>27} ║")
+        print(f"║ Avg Detections/Frame       : {total_ships/max(self.frame_num, 1):>27.2f} ║")
+        print(f"║ Collision Alerts Generated : {total_alerts:>27} ║")
+        print(f"╚═══════════════════════════════════════════════╝")
+        
+        print(f"Output video: {output_path}")
+        print(f"Output JSON : {json_path}")
+        
         return self.results

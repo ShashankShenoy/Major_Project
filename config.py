@@ -9,6 +9,8 @@ CONFIG = {
     "reid_threshold": 0.5,
     "smooth_frames": 5,
     "predict_steps": 20,
+    "lstm_seq_len": 30,
+    "lstm_model_path": "models/lstm_model_trained.pt",
 
     # Camera GPS — change these to your actual camera location
     # These are set to Singapore strait (SMD dataset location)
@@ -16,10 +18,10 @@ CONFIG = {
     "camera_lon": 103.8500,
 
     # Map settings
-    "map_path": r"data\maps\NE2_50M_SR_W\NE2_50M_SR_W.tif",  # update to your filename
+    "map_path": r"data\maps\NE2_50M_SR_W\NE2_50M_SR_W\NE2_50M_SR_W.tif",  # update to your filename
     "fov_km":   2.0,    # how many km the camera sees — adjust to your footage
 
-    "input_video":  "data/videos/input.mp4",
+    "input_video":  r"C:\Desktop\Major_Project-main\data\Videos\input.avi",
     "output_video": "outputs/result.mp4",
     "output_json":  "outputs/results.json",
 
