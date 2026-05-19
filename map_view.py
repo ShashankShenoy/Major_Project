@@ -1,4 +1,6 @@
 # map_view.py
+import base64
+import json
 import cv2
 import numpy as np
 from collections import defaultdict, deque
@@ -7,6 +9,7 @@ from geo_mapper import GeoMapper
 from kalman_tracker import ShipKalmanFilter
 from lstm_predictor import LSTMPredictor
 from config import CONFIG
+from visualization.ws_stream import WebSocketServer
 
 BG_DARK      = (12,  14,  18)
 BG_PANEL     = (18,  22,  28)
@@ -53,7 +56,10 @@ def measure(txt, sc=0.40, th=1):
 class MapView:
     def __init__(self, camera_lat, camera_lon, map_path,
                  fov_km=5.0,
-                 window_name="Ship Detection & Path Prediction System"):
+                 window_name="Ship Detection & Path Prediction System",
+                 ws_enabled=False,
+                 ws_host="127.0.0.1",
+                 ws_port=8765):
 
         self.wname      = window_name
         self.t0         = time.time()
@@ -67,13 +73,29 @@ class MapView:
         print(f"Region: {self.mapper.get_region_name()}")
 
         self.kfs      = {}
+        try:
+            import torch
+            lstm_device = "cuda" if torch.cuda.is_available() else "cpu"
+        except Exception:
+            lstm_device = "cpu"
         self.lstm     = LSTMPredictor(
             predict_steps=CONFIG["predict_steps"],
             seq_len=30,
-            device="cuda" if __import__('torch').cuda.is_available() else "cpu"
+            device=lstm_device
         )
         self.trails   = defaultdict(lambda: deque(maxlen=90))
         self.ship_log = {}
+
+        self.ws_enabled = ws_enabled
+        self.ws_server = None
+        if self.ws_enabled:
+            try:
+                self.ws_server = WebSocketServer(ws_host, ws_port)
+                self.ws_server.start()
+                print(f"Live WebSocket server started at ws://{ws_host}:{ws_port}")
+            except Exception as exc:
+                print(f"Warning: failed to start WebSocket server: {exc}")
+                self.ws_enabled = False
 
         # Canvas layout
         self.W  = 1560
@@ -180,6 +202,8 @@ class MapView:
         self._log_panel(canvas, processed)
         self._scanlines(canvas)
         cv2.imshow(self.wname, canvas)
+        self._publish_stream(canvas)
+        return processed
 
     # ─── header ───────────────────────────────────────────────────────────────
     def _header(self, c):
@@ -480,6 +504,31 @@ class MapView:
             [(1,1),(-1,1),(1,-1),(-1,-1)]):
             cv2.line(c,(cx,cy),(cx+dx*L,cy),ACCENT,T)
             cv2.line(c,(cx,cy),(cx,cy+dy*L),ACCENT,T)
+
+    def _publish_stream(self, frame):
+        if not self.ws_enabled or self.ws_server is None:
+            return
+        try:
+            ok, encoded = cv2.imencode('.jpg', frame, [cv2.IMWRITE_JPEG_QUALITY, 65])
+            if not ok:
+                return
+            payload = base64.b64encode(encoded.tobytes()).decode('ascii')
+            self.ws_server.broadcast({
+                'type': 'frame',
+                'data': payload,
+            })
+        except Exception as exc:
+            print(f"WebSocket publish error: {exc}")
+
+    def stop(self):
+        if self.ws_server is not None:
+            try:
+                self.ws_server.stop()
+            except Exception as exc:
+                print(f"Error stopping WebSocket server: {exc}")
+            self.ws_server = None
+        cv2.destroyAllWindows()
+
 
     def _tab(self,c,x,y,text):
         tw,th = measure(text,sc=0.36)
