@@ -1,0 +1,593 @@
+
+// ═══════════════════════════════════════════════
+// CONSTANTS
+// ═══════════════════════════════════════════════
+const SHIP_COLORS = ['#00f5b4','#1e90ff','#ff2d55','#ffb800','#9f6eff',
+                     '#00ccff','#ff6644','#55ff88','#ff44aa','#88aaff','#ffdd44','#44ffcc'];
+const RECENT_FRAME_WINDOW = 60;
+
+const DIR_ARROWS = {N:'↑',NE:'↗',E:'→',SE:'↘',S:'↓',SW:'↙',W:'←',NW:'↖',stationary:'·'};
+const DIR_LABELS = {N:'N',NE:'NE',E:'E',SE:'SE',S:'S',SW:'SW',W:'W',NW:'NW',stationary:'STA'};
+
+const PLOTLY_LAYOUT_BASE = {
+  paper_bgcolor: 'rgba(0,0,0,0)',
+  plot_bgcolor: 'rgba(8,13,20,1)',
+  font: { family: 'Share Tech Mono, monospace', color: '#4a6070', size: 10 },
+  xaxis: { gridcolor: '#162030', linecolor: '#162030', tickfont: { size: 9 }, zeroline: false },
+  yaxis: { gridcolor: '#162030', linecolor: '#162030', tickfont: { size: 9 }, zeroline: false },
+  margin: { l: 44, r: 16, t: 36, b: 34 },
+  hoverlabel: { bgcolor: '#0e1520', bordercolor: '#1e2e42', font: { family: 'Share Tech Mono', size: 10 } },
+  legend: { bgcolor: 'rgba(0,0,0,0)', bordercolor: '#162030', borderwidth: 1, font: { size: 9 } },
+};
+
+const PLOTLY_CONFIG = { displayModeBar: false, responsive: true };
+
+// ═══════════════════════════════════════════════
+// STATE
+// ═══════════════════════════════════════════════
+let results = [];
+let chartsInitialized = false;
+let autoRefreshTimer = null;
+
+// ═══════════════════════════════════════════════
+// TIME
+// ═══════════════════════════════════════════════
+function updateClock() {
+  const now = new Date();
+  const s = now.toISOString().replace('T',' ').slice(0,19);
+  document.getElementById('hdrTime').textContent = s + ' UTC+8';
+}
+setInterval(updateClock, 1000);
+updateClock();
+
+// ═══════════════════════════════════════════════
+// TAB SWITCHING
+// ═══════════════════════════════════════════════
+let currentTab = 0;
+function switchTab(idx) {
+  document.querySelectorAll('.tab-btn').forEach((b,i) => b.classList.toggle('active', i===idx));
+  document.querySelectorAll('.tab-panel').forEach((p,i) => p.classList.toggle('active', i===idx));
+  currentTab = idx;
+  // Resize charts after showing
+  setTimeout(() => {
+    ['chartTraj','chartLSTMKin','chartHeadingRose','chartSpeedBar',
+     'chartConf','chartTimeline','chartClass'].forEach(id => {
+      const el = document.getElementById(id);
+      if (el && el._fullLayout) Plotly.Plots.resize(el);
+    });
+  }, 30);
+}
+
+// ═══════════════════════════════════════════════
+// LOAD DATA (from file input via fetch or drag)
+// ═══════════════════════════════════════════════
+async function loadData() {
+  const path = document.getElementById('jsonPath').value.trim();
+  try {
+    const resp = await fetch(path);
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+    const data = await resp.json();
+    results = Array.isArray(data) ? data.slice(-RECENT_FRAME_WINDOW) : [];
+    document.getElementById('fileInfo').textContent = `✓ Loaded ${results.length} frames`;
+    document.getElementById('sbStatus').textContent = `LIVE · ${new Date().toLocaleTimeString()}`;
+    render();
+  } catch(e) {
+    document.getElementById('fileInfo').textContent = `⚠ ${e.message} — using demo data`;
+    document.getElementById('sbStatus').textContent = 'DEMO MODE';
+    results = generateDemoData();
+    render();
+  }
+}
+
+// ═══════════════════════════════════════════════
+// DEMO DATA GENERATOR
+// ═══════════════════════════════════════════════
+function generateDemoData() {
+  const frames = [];
+  const nShips = 7;
+  // initial positions
+  const ships = Array.from({length: nShips}, (_, i) => ({
+    x: 200 + Math.random()*600, y: 150 + Math.random()*400,
+    vx: (Math.random()-0.5)*3, vy: (Math.random()-0.5)*2,
+    heading: Math.random()*360,
+    conf: 0.6 + Math.random()*0.35,
+    method: Math.random() > 0.4 ? 'LSTM' : (Math.random() > 0.5 ? 'PARTIAL_LSTM' : 'KIN'),
+    class: ['cargo','tanker','container','patrol'][Math.floor(Math.random()*4)]
+  }));
+
+  for (let f = 0; f < 60; f++) {
+    const frameShips = [];
+    const active = Math.floor(3 + Math.random()*nShips);
+    for (let i = 0; i < Math.min(active, nShips); i++) {
+      const s = ships[i];
+      s.x += s.vx + (Math.random()-.5)*.5;
+      s.y += s.vy + (Math.random()-.5)*.5;
+      s.heading = (s.heading + (Math.random()-0.5)*5 + 360) % 360;
+      // bounce
+      if (s.x < 50 || s.x > 950) s.vx *= -1;
+      if (s.y < 50 || s.y > 650) s.vy *= -1;
+
+      const dir = headingToDir(s.heading);
+      const predPath = [];
+      for (let p = 1; p <= 10; p++) {
+        predPath.push([s.x + s.vx*p, s.y + s.vy*p]);
+      }
+
+      const gpsLat = 1.28 + (s.y - 350) * 0.0002;
+      const gpsLon = 103.85 + (s.x - 500) * 0.0002;
+
+      frameShips.push({
+        id: i,
+        center: [s.x, s.y],
+        heading: s.heading,
+        speed: Math.sqrt(s.vx**2 + s.vy**2),
+        direction: dir,
+        confidence: Math.max(0.3, s.conf + (Math.random()-.5)*.05),
+        prediction_method: s.method,
+        predicted_path: predPath,
+        gps: [gpsLat, gpsLon],
+        class: s.class
+      });
+    }
+
+    const alerts = [];
+    for (let a = 0; a < frameShips.length-1; a++) {
+      for (let b = a+1; b < frameShips.length; b++) {
+        const dx = frameShips[a].center[0] - frameShips[b].center[0];
+        const dy = frameShips[a].center[1] - frameShips[b].center[1];
+        const dist = Math.sqrt(dx*dx+dy*dy);
+        if (dist < 80) {
+          const cpa = dist * 0.3;
+          const risk = cpa < 15 ? 'critical' : cpa < 30 ? 'high' : cpa < 50 ? 'medium' : 'low';
+          alerts.push({ ship1_id: a, ship2_id: b, cpa_distance: cpa, time_to_cpa: dist/2, risk_level: risk });
+        }
+      }
+    }
+
+    frames.push({ frame: f, ship_count: frameShips.length, ships: frameShips, collision_alerts: alerts });
+  }
+  return frames;
+}
+
+function headingToDir(h) {
+  const dirs = ['N','NE','E','SE','S','SW','W','NW'];
+  return dirs[Math.round(((h % 360) + 360) % 360 / 45) % 8];
+}
+
+// ═══════════════════════════════════════════════
+// PARSE HELPERS
+// ═══════════════════════════════════════════════
+function parseMetrics(results) {
+  if (!results.length) return { total:0,unique:0,avg:0,frames:0,alerts:0,lstm_frames:0,kin_frames:0,peak:0 };
+  const ids = new Set(); let total=0,lstm_f=0,kin_f=0,peak=0;
+  for (const fr of results) {
+    const cnt = fr.ship_count || 0;
+    total += cnt;
+    peak = Math.max(peak, cnt);
+    for (const s of (fr.ships||[])) {
+      ids.add(s.id);
+      const m = String(s.prediction_method||'').toUpperCase();
+      if (m.includes('LSTM')) lstm_f++; else kin_f++;
+    }
+  }
+  const alerts = results.reduce((a,fr) => a + (fr.collision_alerts||[]).length, 0);
+  return { total, unique: ids.size, avg: total/results.length, frames: results.length, alerts, lstm_frames: lstm_f, kin_frames: kin_f, peak };
+}
+
+function parseShips(results) {
+  const stats = {};
+  for (const fr of results) {
+    for (const s of (fr.ships||[])) {
+      const sid = s.id;
+      if (!stats[sid]) stats[sid] = { id: sid, frames:0, conf:[], speed:[], heading:[], direction:'', pred_steps:[], method:[], pos:[], gps:[] };
+      const d = stats[sid];
+      d.frames++;
+      d.conf.push(s.confidence||0);
+      d.speed.push(s.speed||0);
+      d.heading.push(s.heading||0);
+      d.direction = s.direction||'--';
+      d.pred_steps.push((s.predicted_path||[]).length);
+      d.method.push(s.prediction_method||'KIN');
+      d.pos.push(s.center||[0,0]);
+      if (s.gps) d.gps.push(s.gps);
+    }
+  }
+  return Object.values(stats).sort((a,b) => a.id-b.id).map(d => {
+    const methods = d.method;
+    const lstmN = methods.filter(m => String(m).toUpperCase().includes('LSTM')).length;
+    const lastM = methods[methods.length-1]||'KIN';
+    return {
+      id: d.id,
+      frames: d.frames,
+      conf: d.conf.reduce((a,b)=>a+b,0)/d.conf.length,
+      speed: d.speed.reduce((a,b)=>a+b,0)/d.speed.length,
+      heading: d.heading[d.heading.length-1]||0,
+      direction: d.direction,
+      pred_steps: d.pred_steps.reduce((a,b)=>a+b,0)/d.pred_steps.length,
+      last_method: lastM,
+      lstm_pct: (lstmN/methods.length)*100,
+      last_pos: d.pos[d.pos.length-1]||[0,0],
+      last_gps: d.gps.length ? d.gps[d.gps.length-1] : null,
+      color: SHIP_COLORS[d.id % SHIP_COLORS.length]
+    };
+  });
+}
+
+function parseAlerts(results) {
+  const seen = new Set(), all = [];
+  for (const fr of results) {
+    for (const a of (fr.collision_alerts||[])) {
+      const key = `${a.ship1_id}-${a.ship2_id}-${(a.risk_level||'').toLowerCase()}`;
+      if (!seen.has(key)) { seen.add(key); all.push(a); }
+    }
+  }
+  const order = ['critical','high','medium','low'];
+  return all.sort((a,b) => order.indexOf(a.risk_level||'low') - order.indexOf(b.risk_level||'low'));
+}
+
+function parseTrajectories(results) {
+  const traj = {}, predTraj = {};
+  for (const fr of results) {
+    for (const s of (fr.ships||[])) {
+      const sid = s.id;
+      if (!traj[sid]) traj[sid] = [];
+      const c = s.center||[0,0];
+      traj[sid].push([c[0], c[1], fr.frame||0, s.heading||0, s.speed||0, s.direction||'--', s.prediction_method||'KIN']);
+      if ((s.predicted_path||[]).length) predTraj[sid] = s.predicted_path;
+    }
+  }
+  return { traj, predTraj };
+}
+
+// ═══════════════════════════════════════════════
+// RENDER METRICS
+// ═══════════════════════════════════════════════
+function renderMetrics(m) {
+  document.getElementById('m-total').textContent = m.total.toLocaleString();
+  document.getElementById('m-total-sub').textContent = `Peak: ${m.peak} / frame`;
+  document.getElementById('m-unique').textContent = m.unique;
+  document.getElementById('m-unique-sub').textContent = `Across ${m.frames.toLocaleString()} frames`;
+  document.getElementById('m-avg').textContent = m.avg.toFixed(1);
+  document.getElementById('m-avg-sub').textContent = `${m.frames.toLocaleString()} frames processed`;
+  document.getElementById('m-alerts').textContent = m.alerts;
+  const lstmPct = m.lstm_frames / Math.max(m.lstm_frames+m.kin_frames,1)*100;
+  document.getElementById('m-lstm').textContent = lstmPct.toFixed(0)+'%';
+
+  const noteBox = document.getElementById('noteBox');
+  if (m.frames === 0) {
+    noteBox.style.display = 'block';
+    noteBox.textContent = 'LSTM coverage is unavailable until the pipeline starts producing frames.';
+  } else if (m.lstm_frames === 0) {
+    noteBox.style.display = 'block';
+    noteBox.textContent = m.frames < 20
+      ? 'LSTM is warming up — the first frames may use kinematic fallback. Coverage will appear once the sequence model stabilizes.'
+      : 'No LSTM predictions detected yet; verify the predictor pipeline.';
+  } else {
+    noteBox.style.display = 'none';
+  }
+}
+
+// ═══════════════════════════════════════════════
+// RENDER ALERTS
+// ═══════════════════════════════════════════════
+function renderAlerts(alerts) {
+  const cont = document.getElementById('alertsContainer');
+  if (!alerts.length) {
+    cont.innerHTML = '<div class="no-alert">✓ &nbsp; NO ACTIVE COLLISION ALERTS</div>';
+    return;
+  }
+  cont.innerHTML = alerts.map(a => {
+    const lvl = (a.risk_level||'low').toLowerCase();
+    const flash = lvl === 'critical' ? ' aflash' : '';
+    return `<div class="alert-item ${lvl}${flash}">
+      <span class="abadge ${lvl}">${lvl.toUpperCase()}</span>
+      <span class="aships">SHIP ${String(a.ship1_id).padStart(2,'0')} ↔ SHIP ${String(a.ship2_id).padStart(2,'0')}</span>
+      <span style="font-size:.72rem;color:var(--textd)">Closest Point of Approach</span>
+      <span class="ameta">CPA &nbsp;<b style="color:#fff">${(a.cpa_distance||0).toFixed(1)}m</b> &nbsp;·&nbsp; TTC &nbsp;<b style="color:#fff">${(a.time_to_cpa||0).toFixed(1)}s</b></span>
+    </div>`;
+  }).join('');
+}
+
+// ═══════════════════════════════════════════════
+// RENDER ACTIVE VESSELS PANEL
+// ═══════════════════════════════════════════════
+function renderActiveVessels(shipRows) {
+  const el = document.getElementById('activeVessels');
+  el.innerHTML = shipRows.slice(0,8).map(r => {
+    const arrow = DIR_ARROWS[r.direction]||'·';
+    const dlabel = DIR_LABELS[r.direction]||r.direction;
+    const gps = r.last_gps ? `${r.last_gps[0].toFixed(4)}N` : `${r.last_pos[0].toFixed(0)}px`;
+    return `<div class="vessel-item" style="border-left-color:${r.color}">
+      <span class="vship-id" style="color:${r.color}">${String(r.id).padStart(2,'0')}</span>
+      <span class="vship-dir">${arrow}</span>
+      <span class="vship-dlbl">${dlabel}</span>
+      <span class="vship-gps">${gps}</span>
+      <span class="vship-spd">${r.speed.toFixed(2)}</span>
+    </div>`;
+  }).join('');
+}
+
+// ═══════════════════════════════════════════════
+// RENDER VESSEL TABLE
+// ═══════════════════════════════════════════════
+function renderVesselTable(shipRows) {
+  const tbody = document.getElementById('vesselTableBody');
+  if (!shipRows.length) { tbody.innerHTML = '<tr><td colspan="11" style="color:var(--textd);text-align:center;padding:.8rem">NO VESSEL DATA</td></tr>'; return; }
+  tbody.innerHTML = shipRows.slice(0,15).map(r => {
+    const col = r.color;
+    const confW = Math.round(r.conf * 52);
+    const m = String(r.last_method).toUpperCase();
+    const [mcls,mlbl] = m.includes('LSTM') && !m.includes('PARTIAL') ? ['method-lstm','LSTM'] : m.includes('PARTIAL') ? ['method-partial','LSTM-P'] : ['method-kin','KIN'];
+    const arrow = DIR_ARROWS[r.direction]||'·';
+    const dlabel = DIR_LABELS[r.direction]||r.direction;
+    const gpsStr = r.last_gps ? `${r.last_gps[0].toFixed(5)}N &nbsp;${r.last_gps[1].toFixed(5)}E` : '—';
+    const posStr = `${r.last_pos[0].toFixed(0)}, ${r.last_pos[1].toFixed(0)}`;
+    return `<tr>
+      <td><span class="vid" style="color:${col};border-color:${col}">${String(r.id).padStart(2,'0')}</span></td>
+      <td>${r.frames}</td>
+      <td><div class="cbar-wrap"><div class="cbar-bg"><div class="cbar-fill" style="width:${confW}px;background:${col}"></div></div><span>${r.conf.toFixed(3)}</span></div></td>
+      <td>${r.speed.toFixed(3)}</td>
+      <td>${r.heading.toFixed(1)}°</td>
+      <td><span style="font-size:.85rem">${arrow}</span> ${dlabel}</td>
+      <td><span class="pred-steps">${r.pred_steps.toFixed(0)}</span></td>
+      <td><span class="${mcls}">${mlbl}</span></td>
+      <td style="color:var(--textd);font-size:.6rem">${posStr}</td>
+      <td style="color:var(--textd);font-size:.6rem">${gpsStr}</td>
+      <td><span class="status-ok">● TRACKING</span></td>
+    </tr>`;
+  }).join('');
+}
+
+// ═══════════════════════════════════════════════
+// CHARTS
+// ═══════════════════════════════════════════════
+function plotTrajectories(results) {
+  const { traj, predTraj } = parseTrajectories(results);
+  if (!Object.keys(traj).length) {
+    Plotly.newPlot('chartTraj', [], { ...PLOTLY_LAYOUT_BASE, height: undefined }, PLOTLY_CONFIG);
+    return;
+  }
+
+  // bounds
+  let allXs=[], allYs=[];
+  for (const [, pts] of Object.entries(traj)) { allXs.push(...pts.map(p=>p[0])); allYs.push(...pts.map(p=>p[1])); }
+  const medX = median(allXs), medY = median(allYs);
+  const stdX = std(allXs)||1, stdY = std(allYs)||1;
+  const clip = 2.5;
+  const goodSids = Object.keys(traj).filter(sid => {
+    const pts = traj[sid];
+    const ax = avg(pts.map(p=>p[0])), ay = avg(pts.map(p=>p[1]));
+    return ax >= medX-clip*stdX && ax <= medX+clip*stdX && ay >= medY-clip*stdY && ay <= medY+clip*stdY;
+  });
+
+  let cxs=[], cys=[];
+  for (const sid of goodSids) { cxs.push(...traj[sid].map(p=>p[0])); cys.push(...traj[sid].map(p=>p[1])); }
+  if (!cxs.length) { Plotly.newPlot('chartTraj', [], PLOTLY_LAYOUT_BASE, PLOTLY_CONFIG); return; }
+
+  const padX = Math.max((Math.max(...cxs)-Math.min(...cxs))*0.12, 50);
+  const padY = Math.max((Math.max(...cys)-Math.min(...cys))*0.12, 50);
+  const xr = [Math.min(...cxs)-padX, Math.max(...cxs)+padX];
+  const yr = [Math.min(...cys)-padY, Math.max(...cys)+padY];
+
+  const traces = [];
+  const annotations = [];
+
+  for (const sid of goodSids) {
+    const pts = traj[sid];
+    const col = SHIP_COLORS[Number(sid) % SHIP_COLORS.length];
+    const xs = pts.map(p=>p[0]), ys = pts.map(p=>p[1]);
+    const hdgs = pts.map(p=>p[3]), spds = pts.map(p=>p[4]), dirs = pts.map(p=>p[5]), meths = pts.map(p=>p[6]);
+
+    traces.push({ x:xs, y:ys, mode:'lines', showlegend:false, line:{color:col,width:2.2}, opacity:.9,
+      customdata: hdgs.map((h,i)=>[h,spds[i],dirs[i],meths[i]]),
+      hovertemplate:`<b style="color:${col}">SHIP ${String(sid).padStart(2,'0')}</b><br>HDG: %{customdata[0]:.1f}°<br>SPD: %{customdata[1]:.2f}<br>DIR: %{customdata[2]}<br>MODEL: %{customdata[3]}<extra></extra>`
+    });
+    // start dot
+    traces.push({ x:[xs[0]], y:[ys[0]], mode:'markers', showlegend:false, marker:{color:col,size:7,symbol:'circle-open',line:{width:1.5,color:col}}, hoverinfo:'skip' });
+    // current arrow
+    traces.push({ x:[xs[xs.length-1]], y:[ys[ys.length-1]], mode:'markers', showlegend:false, marker:{color:col,size:11,symbol:'arrow',angle:hdgs[hdgs.length-1]||0,line:{width:0}}, hoverinfo:'skip' });
+    // label
+    annotations.push({ x:xs[xs.length-1], y:ys[ys.length-1], text:`<b>${String(sid).padStart(2,'0')}</b>`, showarrow:false, font:{family:'Share Tech Mono',size:10,color:col}, bgcolor:'rgba(8,13,20,0.75)', bordercolor:col, borderwidth:1, borderpad:3, xanchor:'left', yanchor:'middle', xshift:14 });
+
+    // prediction
+    const pred = predTraj[sid]||[];
+    if (pred.length) {
+      const pxs = [xs[xs.length-1], ...pred.map(p=>p[0])].map(v=>Math.max(xr[0],Math.min(xr[1],v)));
+      const pys = [ys[ys.length-1], ...pred.map(p=>p[1])].map(v=>Math.max(yr[0],Math.min(yr[1],v)));
+      traces.push({ x:pxs, y:pys, mode:'lines+markers', showlegend:false, line:{color:col,width:1.3,dash:'dot'}, marker:{color:col,size:3,opacity:.45}, opacity:.5,
+        hovertemplate:`<b>PREDICTED · Ship ${sid}</b><br>X: %{x:.0f}<br>Y: %{y:.0f}<extra></extra>` });
+      if (pxs.length > 1) {
+        annotations.push({ x:pxs[pxs.length-1], y:pys[pys.length-1], ax:pxs[pxs.length-2], ay:pys[pys.length-2], xref:'x', yref:'y', axref:'x', ayref:'y', showarrow:true, arrowhead:2, arrowsize:1, arrowwidth:1.5, arrowcolor:col, opacity:.55 });
+      }
+    }
+  }
+
+  // legend annotation
+  annotations.push({ x:xr[0]+padX*.3, y:yr[0]+padY*.3, xref:'x', yref:'y', text:'──  Actual path<br>····  LSTM prediction<br>○  Start  ▶  Current', showarrow:false, font:{family:'Share Tech Mono',size:9,color:'#4a6070'}, bgcolor:'rgba(8,13,20,0.8)', bordercolor:'#162030', borderwidth:1, borderpad:6, align:'left', xanchor:'left', yanchor:'bottom' });
+
+  const layout = {
+    ...PLOTLY_LAYOUT_BASE,
+    title:{ text:'VESSEL TRAJECTORY MAP  ·  labels = ship ID  ·  dotted = LSTM predicted path', font:{size:10,color:'#4a6070'}, x:.01 },
+    xaxis:{ ...PLOTLY_LAYOUT_BASE.xaxis, range:xr, title:'X (pixels)' },
+    yaxis:{ ...PLOTLY_LAYOUT_BASE.yaxis, range:yr, title:'Y (pixels)' },
+    showlegend:false, annotations
+  };
+  Plotly.react('chartTraj', traces, layout, PLOTLY_CONFIG);
+}
+
+function plotTimeline(results) {
+  const frames = results.map(f=>f.frame||0);
+  const counts = results.map(f=>f.ship_count||0);
+  const lstmCounts = results.map(fr => (fr.ships||[]).filter(s=>String(s.prediction_method||'').toUpperCase().includes('LSTM')).length);
+  const traces = [
+    { x:frames, y:counts, name:'Total Ships', mode:'lines', fill:'tozeroy', fillcolor:'rgba(0,245,180,.06)', line:{color:'#00f5b4',width:1.5}, hovertemplate:'Frame %{x}<br>Ships: %{y}<extra></extra>' },
+    { x:frames, y:lstmCounts, name:'LSTM Active', mode:'lines', line:{color:'#1e90ff',width:1,dash:'dot'}, hovertemplate:'Frame %{x}<br>LSTM ships: %{y}<extra></extra>' }
+  ];
+  const layout = { ...PLOTLY_LAYOUT_BASE, height:240, title:{text:'DETECTION TIMELINE  ·  blue = ships using LSTM prediction',font:{size:10,color:'#4a6070'},x:.01}, xaxis:{...PLOTLY_LAYOUT_BASE.xaxis,title:'FRAME'}, yaxis:{...PLOTLY_LAYOUT_BASE.yaxis,title:'COUNT'} };
+  Plotly.react('chartTimeline', traces, layout, PLOTLY_CONFIG);
+}
+
+function plotHeadingRose(shipRows) {
+  if (!shipRows.length) return;
+  const trace = { type:'barpolar', r:shipRows.map(()=>1), theta:shipRows.map(r=>r.heading), width:shipRows.map(()=>15), marker:{ color:shipRows.map(r=>r.color), line:{color:'#080d14',width:1} }, opacity:.85 };
+  const layout = { ...PLOTLY_LAYOUT_BASE, height:260, title:{text:'HEADING DISTRIBUTION',font:{size:10,color:'#4a6070'},x:.01}, polar:{ bgcolor:'rgba(8,13,20,1)', angularaxis:{tickfont:{size:8,color:'#4a6070'},gridcolor:'#162030',linecolor:'#162030',direction:'clockwise',rotation:90}, radialaxis:{visible:false} }, showlegend:false };
+  Plotly.react('chartHeadingRose', [trace], layout, PLOTLY_CONFIG);
+}
+
+function plotSpeedBar(shipRows) {
+  if (!shipRows.length) return;
+  const traces = shipRows.map(r => ({
+    type:'bar', x:[`#${String(r.id).padStart(2,'0')}`], y:[r.speed], name:`Ship ${r.id}`,
+    marker:{color:r.color,line:{color:'#050810',width:1}}, width:.6,
+    hovertemplate:`Ship ${r.id}<br>Avg Speed: ${r.speed.toFixed(3)}<extra></extra>`
+  }));
+  const layout = { ...PLOTLY_LAYOUT_BASE, height:260, title:{text:'AVG SPEED PER VESSEL',font:{size:10,color:'#4a6070'},x:.01}, showlegend:false, bargap:.3, xaxis:{...PLOTLY_LAYOUT_BASE.xaxis,title:'VESSEL'}, yaxis:{...PLOTLY_LAYOUT_BASE.yaxis,title:'SPEED (px/frame)'} };
+  Plotly.react('chartSpeedBar', traces, layout, PLOTLY_CONFIG);
+}
+
+function plotLSTMKin(shipRows) {
+  if (!shipRows.length) return;
+  const ids = shipRows.map(r=>`#${String(r.id).padStart(2,'0')}`);
+  const lstmPcts = shipRows.map(r=>r.lstm_pct);
+  const kinPcts = lstmPcts.map(v=>100-v);
+  const traces = [
+    { type:'bar', name:'LSTM', x:ids, y:lstmPcts, marker:{color:'#00f5b4',line:{width:0}}, opacity:.85 },
+    { type:'bar', name:'Kinematic', x:ids, y:kinPcts, marker:{color:'#1e2e42',line:{width:0}}, opacity:.85 }
+  ];
+  const layout = { ...PLOTLY_LAYOUT_BASE, height:200, title:{text:'LSTM vs KINEMATIC PREDICTION USAGE (%)',font:{size:10,color:'#4a6070'},x:.01}, barmode:'stack', showlegend:true, xaxis:{...PLOTLY_LAYOUT_BASE.xaxis,title:'VESSEL'}, yaxis:{...PLOTLY_LAYOUT_BASE.yaxis,title:'%'} };
+  Plotly.react('chartLSTMKin', traces, layout, PLOTLY_CONFIG);
+}
+
+function plotConfidence(shipRows) {
+  if (!shipRows.length) return;
+  const xs = shipRows.map(r=>`#${String(r.id).padStart(2,'0')}`);
+  const ys = shipRows.map(r=>r.conf);
+  const trace = { type:'bar', x:xs, y:ys, marker:{color:shipRows.map(r=>r.color),line:{color:'#050810',width:1}}, opacity:.85, hovertemplate:'Ship %{x}<br>Conf: %{y:.3f}<extra></extra>' };
+  const layout = { ...PLOTLY_LAYOUT_BASE, height:200, showlegend:false, title:{text:'DETECTION CONFIDENCE BY VESSEL  ·  yellow = 0.5 threshold',font:{size:10,color:'#4a6070'},x:.01}, yaxis:{...PLOTLY_LAYOUT_BASE.yaxis,range:[0,1],title:'CONFIDENCE'}, xaxis:{...PLOTLY_LAYOUT_BASE.xaxis,title:'VESSEL'},
+    shapes:[{type:'line',x0:-.5,x1:xs.length-.5,y0:.5,y1:.5,line:{color:'#ffb800',width:1,dash:'dot'}}] };
+  Plotly.react('chartConf', [trace], layout, PLOTLY_CONFIG);
+}
+
+function plotClassDistribution(results) {
+  const classes = {};
+  for (const fr of results) for (const s of (fr.ships||[])) { const c = s.class||'vessel'; classes[c] = (classes[c]||0)+1; }
+  const labels = Object.keys(classes);
+  if (!labels.length) { document.getElementById('classDistWrap').style.display='none'; return; }
+  document.getElementById('classDistWrap').style.display='block';
+  const trace = { type:'pie', labels, values:Object.values(classes), hole:.55, marker:{ colors:SHIP_COLORS.slice(0,labels.length), line:{color:'#050810',width:2} }, textfont:{family:'Share Tech Mono',size:9} };
+  const layout = { ...PLOTLY_LAYOUT_BASE, height:280, showlegend:true, annotations:[{text:'CLASS<br>SPLIT',x:.5,y:.5,font:{size:8,color:'#4a6070'},showarrow:false}] };
+  Plotly.react('chartClass', [trace], layout, PLOTLY_CONFIG);
+}
+
+function renderPredSummary(shipRows) {
+  const lstmN = shipRows.filter(r=>String(r.last_method).toUpperCase().includes('LSTM')&&!String(r.last_method).toUpperCase().includes('PARTIAL')).length;
+  const partialN = shipRows.filter(r=>String(r.last_method).toUpperCase().includes('PARTIAL')).length;
+  const kinN = shipRows.length - lstmN - partialN;
+  document.getElementById('predSummary').innerHTML = [
+    ['FULL LSTM', lstmN, '#00f5b4', '≥50 frames history · seq2seq + attention'],
+    ['PARTIAL LSTM', partialN, '#1e90ff', '10–49 frames · zero-padded input'],
+    ['KINEMATIC', kinN, '#4a6070', '<10 frames · linear regression fallback'],
+  ].map(([label,val,color,desc]) => `
+    <div class="pred-card" style="border-top-color:${color}">
+      <div style="font-family:var(--mono);font-size:.56rem;letter-spacing:.12em;color:var(--textd)">${label}</div>
+      <div style="font-family:'Rajdhani',sans-serif;font-size:1.8rem;font-weight:700;color:#fff;line-height:1.1;margin:.15rem 0">${val}</div>
+      <div style="font-size:.62rem;color:var(--textd)">${desc}</div>
+    </div>`).join('');
+}
+
+function renderStatCards(metrics, shipRows) {
+  const avgConf = shipRows.length ? (shipRows.reduce((a,r)=>a+r.conf,0)/shipRows.length).toFixed(3) : '—';
+  const avgSpd  = shipRows.length ? (shipRows.reduce((a,r)=>a+r.speed,0)/shipRows.length).toFixed(3) : '—';
+  document.getElementById('statCards').innerHTML = [
+    ['PEAK VESSELS',   String(metrics.peak),                    '#00f5b4', 'max in single frame'],
+    ['TOTAL FRAMES',   metrics.frames.toLocaleString(),          '#1e90ff', 'processed by pipeline'],
+    ['AVG CONFIDENCE', avgConf,                                  '#ffb800', 'across all detections'],
+    ['AVG SPEED',      avgSpd,                                   '#9f6eff',  'pixels per frame'],
+  ].map(([lbl,val,color,sub]) => `
+    <div class="stat-card" style="border-top-color:${color}">
+      <div class="stat-lbl">${lbl}</div>
+      <div class="stat-val">${val}</div>
+      <div class="stat-sub">${sub}</div>
+    </div>`).join('');
+}
+
+// ═══════════════════════════════════════════════
+// MATH UTILS
+// ═══════════════════════════════════════════════
+function median(arr) { const s=[...arr].sort((a,b)=>a-b); const m=Math.floor(s.length/2); return s.length%2?s[m]:(s[m-1]+s[m])/2; }
+function std(arr) { const m=arr.reduce((a,b)=>a+b,0)/arr.length; return Math.sqrt(arr.reduce((a,b)=>a+(b-m)**2,0)/arr.length); }
+function avg(arr) { return arr.length ? arr.reduce((a,b)=>a+b,0)/arr.length : 0; }
+
+// ═══════════════════════════════════════════════
+// MAIN RENDER
+// ═══════════════════════════════════════════════
+function render() {
+  if (!results.length) return;
+  const metrics  = parseMetrics(results);
+  const shipRows = parseShips(results);
+  const alerts   = parseAlerts(results);
+
+  renderMetrics(metrics);
+  renderAlerts(alerts);
+  renderActiveVessels(shipRows);
+  renderVesselTable(shipRows);
+  renderPredSummary(shipRows);
+  renderStatCards(metrics, shipRows);
+
+  // Charts
+  plotTrajectories(results);
+  plotTimeline(results);
+  plotHeadingRose(shipRows);
+  plotSpeedBar(shipRows);
+  plotLSTMKin(shipRows);
+  plotConfidence(shipRows);
+  plotClassDistribution(results);
+}
+
+// ═══════════════════════════════════════════════
+// FILE DRAG & DROP / FILE PICKER
+// ═══════════════════════════════════════════════
+document.body.addEventListener('dragover', e => { e.preventDefault(); });
+document.body.addEventListener('drop', e => {
+  e.preventDefault();
+  const file = e.dataTransfer.files[0];
+  if (!file || !file.name.endsWith('.json')) return;
+  const reader = new FileReader();
+  reader.onload = ev => {
+    try {
+      const data = JSON.parse(ev.target.result);
+      results = Array.isArray(data) ? data.slice(-RECENT_FRAME_WINDOW) : [];
+      document.getElementById('jsonPath').value = file.name;
+      document.getElementById('fileInfo').textContent = `✓ Dropped: ${file.name} (${results.length} frames)`;
+      document.getElementById('sbStatus').textContent = `LIVE · ${new Date().toLocaleTimeString()}`;
+      render();
+    } catch(e2) {
+      document.getElementById('fileInfo').textContent = `⚠ Parse error: ${e2.message}`;
+    }
+  };
+  reader.readAsText(file);
+});
+
+// ═══════════════════════════════════════════════
+// AUTO-REFRESH
+// ═══════════════════════════════════════════════
+function startAutoRefresh() {
+  if (autoRefreshTimer) clearInterval(autoRefreshTimer);
+  autoRefreshTimer = setInterval(() => {
+    if (document.getElementById('autoRefresh').checked) loadData();
+  }, 2000);
+}
+document.getElementById('autoRefresh').addEventListener('change', e => {
+  if (e.target.checked) startAutoRefresh(); else clearInterval(autoRefreshTimer);
+});
+
+// ═══════════════════════════════════════════════
+// BOOT
+// ═══════════════════════════════════════════════
+loadData();
+startAutoRefresh();
+
+// Keyboard shortcut: R to refresh
+document.addEventListener('keydown', e => {
+  if (e.key.toLowerCase() === 'r' && !e.ctrlKey && !e.metaKey) loadData();
+});
