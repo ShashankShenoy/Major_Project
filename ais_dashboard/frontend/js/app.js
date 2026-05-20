@@ -313,7 +313,15 @@ function selectShip(mmsi) {
 
 ws.onopen = () => console.log("Connected");
 ws.onmessage = (event) => {
-  latestShips = JSON.parse(event.data);
+  const message = JSON.parse(event.data);
+  // Handle new unified format
+  if (message.type === "unified" && message.ais_ships) {
+    latestShips = message.ais_ships;
+  }
+  // Handle legacy array format
+  else if (Array.isArray(message)) {
+    latestShips = message;
+  }
   scheduleRender();
   updateAnalytics();
   checkAlerts();

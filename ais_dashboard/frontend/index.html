@@ -149,6 +149,135 @@
       background: var(--bg-dark-3);
     }
 
+    /* ─────────────── VIEW MODE BUTTONS ─────────────── */
+
+    .view-mode-buttons {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+    }
+
+    .camera-status {
+      width: 12px;
+      height: 12px;
+      border-radius: 50%;
+      background: #9ca3af;
+      transition: background 0.3s ease;
+    }
+
+    .camera-status.online {
+      background: #10b981;
+      box-shadow: 0 0 8px rgba(16, 185, 129, 0.6);
+    }
+
+    .view-mode-btn {
+      background: var(--bg-2);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 6px 12px;
+      cursor: pointer;
+      font-size: 12px;
+      font-weight: 500;
+      transition: all 0.3s ease;
+      color: var(--text-secondary);
+    }
+
+    body.dark-mode .view-mode-btn {
+      background: var(--bg-dark-2);
+      border-color: var(--border-dark);
+      color: var(--text-tertiary);
+    }
+
+    .view-mode-btn:hover {
+      background: var(--bg-3);
+      border-color: var(--primary);
+    }
+
+    body.dark-mode .view-mode-btn:hover {
+      background: var(--bg-dark-3);
+      border-color: var(--primary);
+    }
+
+    .view-mode-btn.active {
+      background: var(--primary);
+      border-color: var(--primary);
+      color: white;
+    }
+
+    .view-mode-btn:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+
+    /* ─────────────── VIDEO WINDOW ─────────────── */
+
+    .video-window {
+      position: absolute;
+      bottom: 20px;
+      right: 20px;
+      width: 400px;
+      height: 300px;
+      background: var(--bg-0);
+      border: 2px solid var(--primary);
+      border-radius: 8px;
+      overflow: hidden;
+      box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
+      z-index: 100;
+      display: flex !important;
+      flex-direction: column;
+      touch-action: none;
+      cursor: move;
+    }
+
+    body.dark-mode .video-window {
+      background: var(--bg-dark-1);
+      border-color: var(--primary-light);
+    }
+
+    .video-header {
+      background: var(--primary);
+      color: white;
+      padding: 8px 12px;
+      font-size: 12px;
+      font-weight: 600;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      cursor: grab;
+      user-select: none;
+    }
+
+    .video-header:active {
+      cursor: grabbing;
+    }
+
+    .video-close {
+      background: none;
+      border: none;
+      color: white;
+      font-size: 20px;
+      cursor: pointer;
+      padding: 0 4px;
+      line-height: 1;
+    }
+
+    .video-canvas {
+      flex: 1;
+      width: 100%;
+      height: 100%;
+      object-fit: contain;
+      background: #000;
+    }
+
+    /* ─────────────── MAP AREA ─────────────── */
+
+    .map-area {
+      flex: 1;
+      position: relative;
+      overflow: hidden;
+      min-height: 0;
+    }
+
     /* ─────────────── MAIN CONTENT ─────────────── */
 
     .main-content {
@@ -170,12 +299,6 @@
     body.dark-mode .left-panel {
       background: var(--bg-dark-1);
       border-right-color: var(--border-dark);
-    }
-
-    .map-area {
-      flex: 1;
-      position: relative;
-      background: #000;
     }
 
     #map {
@@ -929,6 +1052,12 @@
           <div class="stat-value" id="headerCoverage">1.0°</div>
         </div>
       </div>
+      <div class="view-mode-buttons">
+        <div class="camera-status" id="cameraStatus"></div>
+        <button class="view-mode-btn active" id="btnViewAIS" onclick="setViewMode('ais')">Map</button>
+        <button class="view-mode-btn" id="btnViewLive" onclick="setViewMode('live')">Live Feed</button>
+        <button class="view-mode-btn" id="btnViewHybrid" onclick="setViewMode('hybrid')">Hybrid</button>
+      </div>
       <button class="theme-toggle" onclick="toggleTheme()">Theme</button>
     </div>
 
@@ -1018,9 +1147,17 @@
         </div>
       </div>
 
-      <!-- MAP -->
-      <div class="map-area">
+      <!-- MAP & VIDEO AREA -->
+      <div class="map-area" id="mapArea">
         <div id="map"></div>
+        <!-- Floating video window (hidden by default) -->
+        <div id="videoWindow" class="video-window" style="display: none;">
+          <div class="video-header">
+            <span>Live Camera Feed</span>
+            <button class="video-close" onclick="closeVideoWindow()">×</button>
+          </div>
+          <canvas id="videoCanvas" class="video-canvas" width="640" height="480"></canvas>
+        </div>
         <div class="map-overlay">
           <div class="overlay-title">Legend</div>
           <div class="legend-item">
