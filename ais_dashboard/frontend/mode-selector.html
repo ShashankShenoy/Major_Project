@@ -1,422 +1,337 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Maritime Intelligence System - Mode Selection</title>
-    <style>
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-        }
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>MARVIS · Mode Selection</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Rajdhani:wght@500;600;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+  <style>
+    *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
 
-        body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Helvetica Neue', sans-serif;
-            background: linear-gradient(135deg, #1e3c72 0%, #2a5298 100%);
-            min-height: 100vh;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            padding: 20px;
-        }
+    :root {
+      --bg0:   #050810;
+      --bg1:   #080d14;
+      --bg2:   #0e1520;
+      --bg3:   #162030;
+      --teal:  #00f5b4;
+      --blue:  #1e90ff;
+      --amber: #ffb800;
+      --purple:#9f6eff;
+      --text:  #c8d8e8;
+      --textd: #4a6070;
+      --mono:  'Share Tech Mono', monospace;
+      --sans:  'Rajdhani', sans-serif;
+      --body:  'Inter', sans-serif;
+    }
 
-        .container {
-            max-width: 1000px;
-            width: 100%;
-        }
+    body {
+      font-family: var(--body);
+      background: var(--bg0);
+      color: var(--text);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 32px 20px;
+      position: relative;
+      overflow-x: hidden;
+    }
 
-        .header {
-            text-align: center;
-            color: white;
-            margin-bottom: 50px;
-        }
+    body::before {
+      content: '';
+      position: fixed;
+      inset: 0;
+      background-image:
+        linear-gradient(rgba(0,245,180,.025) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(0,245,180,.025) 1px, transparent 1px);
+      background-size: 40px 40px;
+      pointer-events: none;
+      z-index: 0;
+    }
 
-        .header h1 {
-            font-size: 48px;
-            margin-bottom: 10px;
-            text-shadow: 0 2px 10px rgba(0,0,0,0.3);
-        }
+    body::after {
+      content: '';
+      position: fixed;
+      top: -20%;
+      left: 50%;
+      transform: translateX(-50%);
+      width: 70vw;
+      height: 60vh;
+      background: radial-gradient(ellipse, rgba(0,245,180,.05) 0%, transparent 70%);
+      pointer-events: none;
+      z-index: 0;
+    }
 
-        .header p {
-            font-size: 18px;
-            opacity: 0.9;
-        }
+    .container {
+      max-width: 1060px;
+      width: 100%;
+      position: relative;
+      z-index: 1;
+    }
 
-        .modes {
-            display: grid;
-            grid-template-columns: repeat(3, 1fr);
-            gap: 30px;
-            margin-bottom: 40px;
-        }
+    /* HEADER */
+    .header {
+      text-align: center;
+      margin-bottom: 36px;
+    }
 
-        @media (max-width: 768px) {
-            .modes {
-                grid-template-columns: 1fr;
-            }
-            .header h1 {
-                font-size: 32px;
-            }
-        }
+    .header-badge {
+      display: inline-block;
+      font-family: var(--mono);
+      font-size: .57rem;
+      letter-spacing: .18em;
+      color: var(--teal);
+      background: rgba(0,245,180,.08);
+      border: 1px solid rgba(0,245,180,.22);
+      border-radius: 2px;
+      padding: 4px 14px;
+      margin-bottom: 14px;
+    }
 
-        .mode-card {
-            background: white;
-            border-radius: 12px;
-            padding: 40px 30px;
-            cursor: pointer;
-            transition: all 0.3s ease;
-            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
-            text-align: center;
-            text-decoration: none;
-            color: inherit;
-            display: flex;
-            flex-direction: column;
-            justify-content: space-between;
-            min-height: 400px;
-        }
+    .header h1 {
+      font-family: var(--sans);
+      font-size: clamp(1.9rem, 4.5vw, 3.2rem);
+      font-weight: 700;
+      letter-spacing: .06em;
+      color: #fff;
+      line-height: 1.1;
+      margin-bottom: 10px;
+    }
 
-        .mode-card:hover {
-            transform: translateY(-5px);
-            box-shadow: 0 15px 40px rgba(0,0,0,0.3);
-        }
+    .header h1 span { color: var(--teal); }
 
-        .mode-card.ais-only {
-            border-top: 5px solid #10b981;
-        }
+    .header p {
+      font-family: var(--mono);
+      font-size: .68rem;
+      letter-spacing: .1em;
+      color: var(--textd);
+    }
 
-        .mode-card.hybrid {
-            border-top: 5px solid #3b82f6;
-        }
+    /* GRID */
+    .modes {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 20px;
+      margin-bottom: 28px;
+    }
 
-        .mode-card.video {
-            border-top: 5px solid #f59e0b;
-        }
+    @media (max-width: 760px) {
+      .modes { grid-template-columns: 1fr; }
+    }
 
-        .icon {
-            font-size: 60px;
-            margin-bottom: 20px;
-        }
+    /* CARD */
+    .mode-card {
+      background: var(--bg1);
+      border: 1px solid var(--bg3);
+      border-radius: 4px;
+      padding: 28px 22px 22px;
+      cursor: pointer;
+      transition: border-color .25s, box-shadow .25s, transform .25s;
+      display: flex;
+      flex-direction: column;
+      position: relative;
+      overflow: hidden;
+      min-height: 380px;
+    }
 
-        .mode-title {
-            font-size: 28px;
-            font-weight: bold;
-            margin-bottom: 15px;
-            color: #1f2937;
-        }
+    .mode-card::before {
+      content: '';
+      position: absolute;
+      top: 0; left: 0; right: 0;
+      height: 2px;
+      background: var(--card-accent, var(--teal));
+      opacity: .7;
+    }
 
-        .mode-description {
-            font-size: 14px;
-            color: #6b7280;
-            line-height: 1.6;
-            margin-bottom: 25px;
-            flex-grow: 1;
-        }
+    .mode-card:hover {
+      border-color: var(--card-accent, var(--teal));
+      box-shadow: 0 0 28px rgba(0,0,0,.5), 0 0 0 1px var(--card-accent, var(--teal));
+      transform: translateY(-3px);
+    }
 
-        .features {
-            text-align: left;
-            background: #f9fafb;
-            padding: 20px;
-            border-radius: 8px;
-            margin-bottom: 25px;
-            font-size: 13px;
-        }
+    .mode-card.ais-only { --card-accent: var(--teal); }
+    .mode-card.video    { --card-accent: var(--blue); }
+    .mode-card.hybrid   { --card-accent: var(--purple); }
 
-        .feature {
-            display: flex;
-            align-items: center;
-            margin-bottom: 10px;
-            color: #374151;
-        }
+    .card-icon {
+      font-size: 2rem;
+      margin-bottom: 12px;
+      line-height: 1;
+    }
 
-        .feature:last-child {
-            margin-bottom: 0;
-        }
+    .mode-title {
+      font-family: var(--sans);
+      font-size: 1.3rem;
+      font-weight: 700;
+      letter-spacing: .04em;
+      color: #fff;
+      margin-bottom: 8px;
+    }
 
-        .feature-check {
-            color: #10b981;
-            font-weight: bold;
-            margin-right: 8px;
-        }
+    .mode-description {
+      font-size: .77rem;
+      line-height: 1.65;
+      color: var(--textd);
+      margin-bottom: 20px;
+      flex-grow: 1;
+    }
 
-        .feature-x {
-            color: #ef4444;
-            font-weight: bold;
-            margin-right: 8px;
-        }
+    /* Features */
+    .features {
+      background: var(--bg2);
+      border: 1px solid var(--bg3);
+      border-radius: 3px;
+      padding: 12px 14px;
+      margin-bottom: 20px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
 
-        .button {
-            padding: 12px 30px;
-            font-size: 16px;
-            font-weight: 600;
-            border: none;
-            border-radius: 8px;
-            cursor: pointer;
-            transition: all 0.3s ease;
-            text-decoration: none;
-            display: inline-block;
-            width: 100%;
-        }
+    .feature {
+      display: flex;
+      align-items: center;
+      gap: 9px;
+      font-family: var(--mono);
+      font-size: .58rem;
+      letter-spacing: .05em;
+      color: var(--text);
+    }
 
-        .button-ais {
-            background: #10b981;
-            color: white;
-        }
+    .feature-dot {
+      width: 5px; height: 5px; border-radius: 50%;
+      background: var(--card-accent, var(--teal));
+      flex-shrink: 0;
+    }
 
-        .button-ais:hover {
-            background: #059669;
-        }
+    .feature-dim { background: var(--textd); }
 
-        .button-hybrid {
-            background: #3b82f6;
-            color: white;
-        }
+    /* Button */
+    .btn {
+      font-family: var(--mono);
+      font-size: .62rem;
+      letter-spacing: .14em;
+      border: 1px solid var(--card-accent, var(--teal));
+      background: transparent;
+      color: var(--card-accent, var(--teal));
+      padding: 10px 16px;
+      border-radius: 2px;
+      cursor: pointer;
+      transition: background .2s, color .2s;
+      width: 100%;
+      text-align: center;
+      margin-top: auto;
+    }
+    .btn:hover {
+      background: var(--card-accent, var(--teal));
+      color: var(--bg0);
+    }
+    .btn.disabled {
+      border-color: var(--bg3);
+      color: var(--textd);
+      cursor: not-allowed;
+    }
+    .btn.disabled:hover {
+      background: transparent;
+      color: var(--textd);
+    }
 
-        .button-hybrid:hover {
-            background: #2563eb;
-        }
-
-        .button-video {
-            background: #f59e0b;
-            color: white;
-        }
-
-        .button-video:hover {
-            background: #d97706;
-        }
-
-        .button-disabled {
-            background: #9ca3af;
-            color: white;
-            cursor: not-allowed;
-        }
-
-        .info-box {
-            background: rgba(255,255,255,0.1);
-            border: 1px solid rgba(255,255,255,0.3);
-            border-radius: 8px;
-            padding: 20px;
-            color: white;
-            font-size: 14px;
-            line-height: 1.6;
-        }
-
-        .info-box strong {
-            display: block;
-            margin-bottom: 8px;
-            font-size: 16px;
-        }
-
-        .status {
-            text-align: center;
-            color: white;
-            margin-top: 30px;
-            font-size: 13px;
-            opacity: 0.8;
-        }
-    </style>
+    /* Footer */
+    .footer {
+      text-align: center;
+      font-family: var(--mono);
+      font-size: .52rem;
+      letter-spacing: .1em;
+      color: var(--textd);
+      margin-top: 8px;
+    }
+  </style>
 </head>
 <body>
-    <div class="container">
-        <div class="header">
-            <h1>🌊 Maritime Intelligence System</h1>
-            <p>Choose your operating mode</p>
-        </div>
+  <div class="container">
 
-        <div class="modes">
-            <!-- AIS-Only Mode -->
-            <div class="mode-card ais-only">
-                <div>
-                    <div class="icon">📡</div>
-                    <div class="mode-title">AIS-Only</div>
-                    <p class="mode-description">
-                        Watch live AIS ship tracking in real-time. Perfect for monitoring maritime traffic.
-                    </p>
-
-                    <div class="features">
-                        <div class="feature">
-                            <span class="feature-check">✓</span>
-                            <span>Live AIS ships on map</span>
-                        </div>
-                        <div class="feature">
-                            <span class="feature-check">✓</span>
-                            <span>Real-time updates (2 Hz)</span>
-                        </div>
-                        <div class="feature">
-                            <span class="feature-check">✓</span>
-                            <span>Lightweight & fast</span>
-                        </div>
-                        <div class="feature">
-                            <span class="feature-check">✓</span>
-                            <span>No GPU required</span>
-                        </div>
-                    </div>
-                </div>
-
-                <button class="button button-ais">▶ Start AIS-Only</button>
-            </div>
-
-            <!-- Video / Marvis Mode -->
-            <div class="mode-card video">
-                <div>
-                    <div class="icon">🎥</div>
-                    <div class="mode-title">Video / Marvis</div>
-                    <p class="mode-description">
-                        Prerecorded video with Marvis analytics, trajectories, and calmer model updates.
-                    </p>
-
-                    <div class="features">
-                        <div class="feature">
-                            <span class="feature-check">✓</span>
-                            <span>Prerendered video playback</span>
-                        </div>
-                        <div class="feature">
-                            <span class="feature-check">✓</span>
-                            <span>Video analytics dashboard</span>
-                        </div>
-                        <div class="feature">
-                            <span class="feature-check">✓</span>
-                            <span>Trajectory charts</span>
-                        </div>
-                        <div class="feature">
-                            <span class="feature-check">✓</span>
-                            <span>Collision alert view</span>
-                        </div>
-                    </div>
-                </div>
-
-                <button class="button button-video">▶ Open Video / Marvis</button>
-            </div>
-
-            <!-- Hybrid Placeholder -->
-            <div class="mode-card hybrid">
-                <div>
-                    <div class="icon">🚀</div>
-                    <div class="mode-title">Hybrid</div>
-                    <p class="mode-description">
-                        Reserved for the later AIS + video combined workflow after the first two modes are stable.
-                    </p>
-
-                    <div class="features">
-                        <div class="feature">
-                            <span class="feature-check">✓</span>
-                            <span>AIS + video concept</span>
-                        </div>
-                        <div class="feature">
-                            <span class="feature-check">✓</span>
-                            <span>Matching planned</span>
-                        </div>
-                        <div class="feature">
-                            <span class="feature-check">✓</span>
-                            <span>Later integration</span>
-                        </div>
-                        <div class="feature">
-                            <span class="feature-x">•</span>
-                            <span>Not enabled yet</span>
-                        </div>
-                    </div>
-                </div>
-
-                <button class="button button-disabled">Coming Later</button>
-            </div>
-        </div>
-
-        <div class="info-box">
-            <strong>ℹ️ System Information</strong>
-            Video: C:\Users\91944\MajorProject\data\videos\input.avi<br>
-            API Key: 3493cfbd66acfed5d1ea65b5fb5c5353b88ef4b4<br>
-            Compute Device: CUDA (GPU) / CPU fallback
-        </div>
-
-        <div class="status">
-            AIS on port 8000 • Video / Marvis on port 5000 • Hybrid later
-        </div>
+    <div class="header">
+      <div class="header-badge">MARITIME VISUAL SURVEILLANCE · SELECT MODULE</div>
+      <h1>MARVIS <span>System</span></h1>
+      <p>CHOOSE OPERATING MODULE TO CONTINUE</p>
     </div>
 
-    <script>
-        // Check if backend is ready
-        async function checkBackend() {
-            try {
-                const response = await fetch('http://localhost:8000/health', {
-                    method: 'GET',
-                    headers: { 'Accept': 'application/json' }
-                });
-                if (response.ok) {
-                    console.log('✓ Backend is ready');
-                    return true;
-                }
-            } catch (e) {
-                console.log('Backend not ready yet...');
-                return false;
-            }
-            return false;
-        }
+    <div class="modes">
 
-        // Wait for backend before allowing clicks
-        async function waitForBackend() {
-            let attempts = 0;
-            while (attempts < 30) {
-                if (await checkBackend()) {
-                    document.querySelectorAll('.button').forEach(btn => {
-                        btn.style.cursor = 'pointer';
-                    });
-                    return;
-                }
-                attempts++;
-                await new Promise(r => setTimeout(r, 1000));
-            }
-        }
+      <!-- AIS -->
+      <div class="mode-card ais-only" onclick="launchAIS()">
+        <div class="card-icon">📡</div>
+        <div class="mode-title">AIS Tracking</div>
+        <p class="mode-description">
+          Real-time maritime traffic monitoring via live AIS data streams, with vessel tracking, LSTM trajectory prediction, and fleet analytics on an interactive nautical map.
+        </p>
+        <div class="features">
+          <div class="feature"><span class="feature-dot"></span>Live vessel tracking</div>
+          <div class="feature"><span class="feature-dot"></span>LSTM trajectory prediction</div>
+          <div class="feature"><span class="feature-dot"></span>Collision risk assessment</div>
+          <div class="feature"><span class="feature-dot"></span>Fleet analytics dashboard</div>
+        </div>
+        <button class="btn">▶ &nbsp; LAUNCH AIS MODULE</button>
+      </div>
 
-        // Start mode
-        function startMode(mode) {
-            console.log(`Starting mode: ${mode}`);
+      <!-- MARVIS -->
+      <div class="mode-card video" onclick="launchMarvis()">
+        <div class="card-icon">🎥</div>
+        <div class="mode-title">MARVIS Vision</div>
+        <p class="mode-description">
+          Computer vision pipeline with YOLOv8 vessel detection, DeepOcSort multi-object tracking, and LSTM-based trajectory forecasting over video feeds.
+        </p>
+        <div class="features" style="--card-accent:var(--blue)">
+          <div class="feature"><span class="feature-dot"></span>YOLOv8 vessel detection</div>
+          <div class="feature"><span class="feature-dot"></span>Multi-object tracking</div>
+          <div class="feature"><span class="feature-dot"></span>Trajectory forecasting</div>
+          <div class="feature"><span class="feature-dot"></span>Collision alert system</div>
+        </div>
+        <button class="btn" style="--card-accent:var(--blue)">▶ &nbsp; LAUNCH MARVIS MODULE</button>
+      </div>
 
-            // Send request to backend to set mode
-            fetch(`http://localhost:8000/api/mode/${mode}`, { method: 'POST' })
-                .then(r => r.json())
-                .then(data => {
-                    if (data.success) {
-                        console.log(`✅ Mode set to: ${mode}`);
-                        // Wait a moment then navigate based on mode
-                        setTimeout(() => {
-                            if (mode === 'ais-only') {
-                                window.location.href = 'http://localhost:8000/dashboard?mode=ais-only';
-                            }
-                        }, 500);
-                    } else {
-                        alert(`Error: ${data.error}`);
-                        console.error('Mode switch failed:', data);
-                    }
-                })
-                .catch(e => {
-                    console.error('Error:', e);
-                    alert('Failed to switch mode. Is the backend running?');
-                });
-        }
+      <!-- HYBRID -->
+      <div class="mode-card hybrid" onclick="showComingSoon()">
+        <div class="card-icon">🔀</div>
+        <div class="mode-title">Fusion Mode</div>
+        <p class="mode-description">
+          Unified operational view combining live AIS data with computer vision detections. Cross-modal vessel matching with sensor fusion and integrated threat assessment.
+        </p>
+        <div class="features" style="--card-accent:var(--purple)">
+          <div class="feature"><span class="feature-dot"></span>AIS + vision fusion</div>
+          <div class="feature"><span class="feature-dot"></span>Cross-modal matching</div>
+          <div class="feature"><span class="feature-dot"></span>Unified threat picture</div>
+          <div class="feature"><span class="feature-dot feature-dim"></span>Coming soon</div>
+        </div>
+        <button class="btn disabled" disabled>◌ &nbsp; NOT YET AVAILABLE</button>
+      </div>
 
-        // Add click handlers to mode cards
-        document.querySelectorAll('.mode-card.ais-only').forEach(card => {
-            card.addEventListener('click', (e) => {
-                startMode('ais-only');
-            });
-            card.style.cursor = 'pointer';
-        });
+    </div>
 
-        document.querySelectorAll('.mode-card.video').forEach(card => {
-            card.addEventListener('click', (e) => {
-                window.location.href = 'http://localhost:5000';
-            });
-            card.style.cursor = 'pointer';
-        });
+    <div class="footer">MARVIS · MARITIME INTELLIGENCE SYSTEM · SINGAPORE STRAIT SURVEILLANCE</div>
+  </div>
 
-        document.querySelectorAll('.mode-card.hybrid').forEach(card => {
-            card.addEventListener('click', (e) => {
-                alert('Hybrid mode is reserved for later. Use AIS-Only or Video / Marvis for now.');
-            });
-            card.style.cursor = 'pointer';
-        });
+  <script>
+    function launchAIS() {
+      fetch('http://localhost:8000/api/mode', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ mode: 'ais-only' })
+      })
+      .then(r => r.json())
+      .then(() => { setTimeout(() => { window.location.href = 'http://localhost:8000/dashboard?mode=ais-only'; }, 300); })
+      .catch(() => { window.location.href = 'http://localhost:8000/dashboard?mode=ais-only'; });
+    }
 
-        // Wait for backend on load
-        waitForBackend();
-    </script>
+    function launchMarvis() {
+      window.location.href = 'http://localhost:5000';
+    }
+
+    function showComingSoon() {
+      alert('Fusion Mode is under development.');
+    }
+  </script>
 </body>
 </html>
