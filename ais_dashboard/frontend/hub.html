@@ -1,0 +1,429 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Maritime Intelligence Hub</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Helvetica Neue', sans-serif;
+            background: linear-gradient(135deg, #1e3c72 0%, #2a5298 100%);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+        }
+
+        .container { max-width: 1200px; width: 100%; }
+
+        .header { text-align: center; color: white; margin-bottom: 30px; }
+        .header h1 { font-size: 48px; margin-bottom: 10px; text-shadow: 0 2px 10px rgba(0,0,0,0.3); }
+        .header p { font-size: 18px; opacity: 0.9; }
+
+        /* ── BACKEND LOADING BANNER ── */
+        .loading-banner {
+            background: rgba(255,255,255,0.12);
+            border: 1px solid rgba(255,255,255,0.25);
+            border-radius: 8px;
+            padding: 14px 20px;
+            color: white;
+            font-size: 14px;
+            text-align: center;
+            margin-bottom: 24px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 10px;
+            transition: opacity 0.4s ease;
+        }
+        .loading-banner.hidden { display: none; }
+        .loading-dot {
+            width: 9px; height: 9px; border-radius: 50%;
+            background: #fbbf24; flex-shrink: 0;
+            animation: ldot 1.2s ease-in-out infinite;
+        }
+        @keyframes ldot { 0%,100%{opacity:1;transform:scale(1)} 50%{opacity:0.35;transform:scale(0.65)} }
+
+        /* ── GRID ── */
+        .grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 30px;
+            margin-bottom: 40px;
+        }
+
+        /* ── CARDS ── */
+        .card {
+            background: white;
+            border-radius: 12px;
+            padding: 30px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+            text-align: center;
+            text-decoration: none;
+            color: inherit;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+            min-height: 260px;
+            border-top: 5px solid #3b82f6;
+            position: relative;
+        }
+        .card:hover { transform: translateY(-5px); box-shadow: 0 15px 40px rgba(0,0,0,0.3); }
+        .card.ais-only  { border-top-color: #10b981; }
+        .card.video     { border-top-color: #f59e0b; }
+        .card.hybrid    { border-top-color: #8b5cf6; }
+
+        /* Dimmed / loading state — applied until backend is confirmed ready */
+        .card.card-loading {
+            opacity: 0.55;
+            cursor: not-allowed;
+            filter: grayscale(0.35);
+        }
+        .card.card-loading:hover { transform: none; box-shadow: 0 10px 30px rgba(0,0,0,0.2); }
+
+        /* Per-card backend status badge */
+        .card-status-badge {
+            display: inline-block;
+            font-size: 11px;
+            font-weight: 600;
+            padding: 3px 10px;
+            border-radius: 20px;
+            margin-top: 6px;
+            margin-bottom: 10px;
+            background: #fef3c7;
+            color: #92400e;
+            transition: background 0.3s, color 0.3s;
+        }
+        .card-status-badge.ready {
+            background: #d1fae5;
+            color: #065f46;
+        }
+
+        .icon { font-size: 60px; margin-bottom: 15px; }
+        .card-title { font-size: 24px; font-weight: bold; margin-bottom: 6px; color: #1f2937; }
+        .card-description { font-size: 14px; color: #6b7280; line-height: 1.6; margin-bottom: 16px; flex-grow: 1; }
+        .badge-list { text-align: left; background: #f9fafb; padding: 15px; border-radius: 8px; margin-bottom: 20px; font-size: 12px; }
+        .badge { display: inline-block; margin: 4px; padding: 4px 8px; background: white; border-radius: 4px; border: 1px solid #e5e7eb; }
+
+        /* ── BUTTONS ── */
+        .button {
+            padding: 12px 24px; font-size: 14px; font-weight: 600;
+            border: none; border-radius: 8px; cursor: pointer;
+            transition: all 0.3s ease; text-decoration: none;
+            display: inline-block; width: 100%;
+        }
+        .button-ais    { background: #10b981; color: white; }
+        .button-ais:hover    { background: #059669; }
+        .button-video  { background: #f59e0b; color: white; }
+        .button-video:hover  { background: #d97706; }
+        .button-hybrid { background: #8b5cf6; color: white; }
+        .button-hybrid:hover { background: #7c3aed; }
+        .button-disabled { background: #9ca3af; color: white; cursor: not-allowed; }
+
+        /* ── STATUS BOX ── */
+        .status-box {
+            background: rgba(255,255,255,0.10);
+            border: 1px solid rgba(255,255,255,0.3);
+            border-radius: 8px;
+            padding: 20px;
+            color: white;
+            font-size: 14px;
+            line-height: 1.6;
+            margin-top: 30px;
+        }
+        .status-box strong { display: block; margin-bottom: 8px; font-size: 16px; }
+        .status-item { margin: 8px 0; padding: 8px; background: rgba(255,255,255,0.10); border-radius: 4px; }
+        .status-item span { display: inline-block; width: 150px; font-weight: 600; }
+
+        /* ── TOAST / NOTICE BOX ── */
+        .notice-box {
+            display: none;
+            position: fixed;
+            bottom: 28px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: rgba(15,23,42,0.92);
+            color: #f1f5f9;
+            padding: 13px 26px;
+            border-radius: 8px;
+            font-size: 14px;
+            font-weight: 500;
+            z-index: 9999;
+            box-shadow: 0 4px 24px rgba(0,0,0,0.4);
+            white-space: nowrap;
+            backdrop-filter: blur(4px);
+        }
+
+        @media (max-width: 768px) {
+            .header h1 { font-size: 32px; }
+            .grid { grid-template-columns: 1fr; gap: 20px; }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🌊 Maritime Intelligence Hub</h1>
+            <p>Choose your dashboard and operating mode</p>
+        </div>
+
+        <!-- Live status of both backends while they boot -->
+        <div class="loading-banner" id="loadingBanner">
+            <span class="loading-dot"></span>
+            <span id="bannerText">Backends starting up — please wait before selecting a mode…</span>
+        </div>
+
+        <div class="grid">
+            <!-- AIS-Only Mode — disabled until AIS backend /health returns OK -->
+            <div class="card ais-only card-loading" id="cardAIS" onclick="selectMode('ais-only')">
+                <div>
+                    <div class="icon">📡</div>
+                    <div class="card-title">AIS-Only</div>
+                    <div class="card-status-badge" id="badgeAIS">⏳ Connecting…</div>
+                    <p class="card-description">
+                        Real-time AIS ship tracking on interactive map. Perfect for monitoring maritime traffic.
+                    </p>
+                    <div class="badge-list">
+                        <span class="badge">✓ Live AIS</span>
+                        <span class="badge">✓ 2 Hz Updates</span>
+                        <span class="badge">✓ Lightweight</span>
+                        <span class="badge">✓ No GPU</span>
+                    </div>
+                </div>
+                <button class="button button-ais" id="btnAIS">▶ Select AIS-Only</button>
+            </div>
+
+            <!-- Video / Marvis Mode — disabled until Marvis /api/status returns OK -->
+            <div class="card video card-loading" id="cardMarvis" onclick="goToDashboard('/marvis')">
+                <div>
+                    <div class="icon">🎥</div>
+                    <div class="card-title">Video / Marvis</div>
+                    <div class="card-status-badge" id="badgeMarvis">⏳ Connecting…</div>
+                    <p class="card-description">
+                        Prerecorded video playback with Marvis analytics, trajectories, and calmer model updates.
+                    </p>
+                    <div class="badge-list">
+                        <span class="badge">✓ Prerecorded Video</span>
+                        <span class="badge">✓ Marvis Charts</span>
+                        <span class="badge">✓ Trajectories</span>
+                        <span class="badge">✓ Alerts</span>
+                    </div>
+                </div>
+                <button class="button button-video" id="btnMarvis">▶ Open Video / Marvis</button>
+            </div>
+
+            <!-- Hybrid Placeholder — always disabled -->
+            <div class="card hybrid" onclick="showHybridPlaceholder()">
+                <div>
+                    <div class="icon">🚀</div>
+                    <div class="card-title">Hybrid</div>
+                    <p class="card-description">
+                        Reserved for the later combined AIS + video workflow once the first two modes are locked in.
+                    </p>
+                    <div class="badge-list">
+                        <span class="badge">Later</span>
+                        <span class="badge">AIS + Video</span>
+                        <span class="badge">Matching</span>
+                        <span class="badge">Integration Pending</span>
+                    </div>
+                </div>
+                <button class="button button-disabled">Coming Later</button>
+            </div>
+        </div>
+
+        <div class="status-box">
+            <strong>ℹ️ System Information</strong>
+            <div class="status-item">
+                <span>AIS Backend:</span>
+                <span id="aisStatus">⏳ Connecting…</span>
+            </div>
+            <div class="status-item">
+                <span>Marvis Backend:</span>
+                <span id="marvisStatus">⏳ Connecting…</span>
+            </div>
+            <div class="status-item">
+                <span>Video:</span>
+                <span>C:\Users\91944\MajorProject\data\videos\input.avi</span>
+            </div>
+            <div class="status-item">
+                <span>Compute:</span>
+                <span>CUDA (GPU) / CPU fallback</span>
+            </div>
+            <div class="status-item">
+                <span>Shortcuts:</span>
+                <span>Press 1 (AIS-Only), 2 (Video / Marvis), 3 (Hybrid Later)</span>
+            </div>
+        </div>
+    </div>
+
+    <!-- Toast notice shown when user clicks a card that isn't ready yet -->
+    <div class="notice-box" id="noticeBox"></div>
+
+    <script>
+        // ── CONFIG ──────────────────────────────────────────────────────────
+        const CONFIG = {
+            aisBackend:    'http://localhost:8000',
+            marvisBackend: 'http://localhost:5000',
+            checkInterval: 2000     // Poll every 2s (was 5s) until both backends ready
+        };
+
+        // ── STATE ────────────────────────────────────────────────────────────
+        let aisReady    = false;
+        let marvisReady = false;
+        let backendCheckInterval = null;
+        let noticeTimeout = null;
+
+        // ── PERSISTENCE ──────────────────────────────────────────────────────
+        function setSelectedMode(mode) { localStorage.setItem('selectedMode', mode); }
+        function getSelectedMode()     { return localStorage.getItem('selectedMode') || 'ais-only'; }
+
+        // ── TOAST ────────────────────────────────────────────────────────────
+        function showNotice(msg) {
+            const box = document.getElementById('noticeBox');
+            if (!box) return;
+            box.textContent = msg;
+            box.style.display = 'block';
+            clearTimeout(noticeTimeout);
+            noticeTimeout = setTimeout(() => { box.style.display = 'none'; }, 3500);
+        }
+
+        // ── CARD STATE ────────────────────────────────────────────────────────
+        function setCardReady(cardId, badgeId, btnId, ready) {
+            const card  = document.getElementById(cardId);
+            const badge = document.getElementById(badgeId);
+            if (card) card.classList.toggle('card-loading', !ready);
+            if (badge) {
+                badge.textContent = ready ? '✅ Backend Ready' : '⏳ Connecting…';
+                badge.classList.toggle('ready', ready);
+            }
+        }
+
+        // ── BACKEND HEALTH CHECK ──────────────────────────────────────────────
+        async function checkBackend() {
+            // AIS backend — uses /health endpoint
+            try {
+                const r = await fetch(`${CONFIG.aisBackend}/health`, {
+                    cache: 'no-store',
+                    signal: AbortSignal.timeout(2500)
+                });
+                aisReady = r.ok;
+            } catch (_) {
+                aisReady = false;
+            }
+            document.getElementById('aisStatus').textContent =
+                aisReady ? '✅ Ready (port 8000)' : '⏳ Starting…';
+            setCardReady('cardAIS', 'badgeAIS', 'btnAIS', aisReady);
+
+            // Marvis backend — uses /api/status endpoint
+            try {
+                const r = await fetch(`${CONFIG.marvisBackend}/api/status`, {
+                    cache: 'no-store',
+                    signal: AbortSignal.timeout(2500)
+                });
+                marvisReady = r.ok;
+            } catch (_) {
+                marvisReady = false;
+            }
+            document.getElementById('marvisStatus').textContent =
+                marvisReady ? '✅ Ready (port 5000)' : '⏳ Starting…';
+            setCardReady('cardMarvis', 'badgeMarvis', 'btnMarvis', marvisReady);
+
+            // Update / hide the loading banner
+            const banner     = document.getElementById('loadingBanner');
+            const bannerText = document.getElementById('bannerText');
+            if (aisReady && marvisReady) {
+                // Both ready — hide banner, stop polling
+                if (banner) banner.classList.add('hidden');
+                if (backendCheckInterval) {
+                    clearInterval(backendCheckInterval);
+                    backendCheckInterval = null;
+                }
+            } else if (aisReady && !marvisReady) {
+                if (bannerText) bannerText.textContent =
+                    'AIS backend ready ✅ — Marvis video backend still loading…';
+                if (banner) banner.classList.remove('hidden');
+            } else if (!aisReady && marvisReady) {
+                if (bannerText) bannerText.textContent =
+                    'Marvis backend ready ✅ — AIS backend still loading…';
+                if (banner) banner.classList.remove('hidden');
+            } else {
+                if (bannerText) bannerText.textContent =
+                    'Backends starting up — please wait before selecting a mode…';
+                if (banner) banner.classList.remove('hidden');
+            }
+        }
+
+        // ── MODE SELECTION ────────────────────────────────────────────────────
+
+        // AIS-Only card handler
+        function selectMode(mode) {
+            if (!aisReady) {
+                showNotice('⏳ AIS backend is still starting up. Please wait a moment.');
+                return;
+            }
+            console.log(`🚀 Launching ${mode} mode…`);
+            setSelectedMode(mode);
+
+            // POST mode switch to AIS backend, then navigate
+            fetch(`${CONFIG.aisBackend}/api/mode`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ mode })
+            })
+            .then(r => r.json())
+            .then(() => {
+                setTimeout(() => {
+                    window.location.href = `${CONFIG.aisBackend}/dashboard?mode=${mode}`;
+                }, 300);
+            })
+            .catch(() => {
+                // Navigate anyway — health check already confirmed the backend is up
+                window.location.href = `${CONFIG.aisBackend}/dashboard?mode=${mode}`;
+            });
+        }
+
+        // Video / Marvis card handler
+        function goToDashboard(path) {
+            if (path === '/marvis' && !marvisReady) {
+                if (aisReady) {
+                    showNotice('⏳ Marvis video backend is still starting up. Try in a few seconds.');
+                } else {
+                    showNotice('⏳ Both backends are still starting. Please wait.');
+                }
+                return;
+            }
+            console.log(`📊 Opening ${path}…`);
+            if (path === '/marvis') {
+                setSelectedMode('video-marvis');
+                setTimeout(() => { window.location.href = CONFIG.marvisBackend; }, 200);
+            } else {
+                window.location.href = path;
+            }
+        }
+
+        function showHybridPlaceholder() {
+            showNotice('🚧 Hybrid mode is coming later. Use AIS-Only or Video / Marvis for now.');
+        }
+
+        // ── BOOT ──────────────────────────────────────────────────────────────
+        window.addEventListener('load', () => {
+            // First check immediately on page load
+            checkBackend();
+            // Then every 2s until both backends confirm ready
+            backendCheckInterval = setInterval(checkBackend, CONFIG.checkInterval);
+        });
+
+        // Keyboard shortcuts (only fire if backend is ready)
+        document.addEventListener('keydown', e => {
+            if (e.key === '1') selectMode('ais-only');
+            if (e.key === '2') goToDashboard('/marvis');
+            if (e.key === '3') showHybridPlaceholder();
+        });
+    </script>
+</body>
+</html>
