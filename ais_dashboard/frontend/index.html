@@ -149,6 +149,54 @@
       background: var(--bg-dark-3);
     }
 
+    /* ─────────────── MODE SWITCHER ─────────────── */
+
+    .mode-switcher {
+      display: flex;
+      gap: 6px;
+      align-items: center;
+      margin-right: 12px;
+    }
+
+    .mode-btn {
+      background: var(--bg-2);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 6px 10px;
+      cursor: pointer;
+      font-size: 12px;
+      font-weight: 600;
+      transition: all 0.3s ease;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+
+    body.dark-mode .mode-btn {
+      background: var(--bg-dark-2);
+      border-color: var(--border-dark);
+      color: var(--text-light);
+    }
+
+    .mode-btn:hover {
+      background: var(--bg-3);
+      border-color: var(--primary);
+    }
+
+    body.dark-mode .mode-btn:hover {
+      background: var(--bg-dark-3);
+      border-color: var(--primary-light);
+    }
+
+    .mode-btn.active {
+      background: var(--primary);
+      border-color: var(--primary);
+      color: white;
+    }
+
+    .mode-btn.inactive {
+      opacity: 0.6;
+    }
+
     /* ─────────────── VIEW MODE BUTTONS ─────────────── */
 
     .view-mode-buttons {
@@ -223,7 +271,7 @@
       overflow: hidden;
       box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
       z-index: 100;
-      display: flex !important;
+      display: none;
       flex-direction: column;
       touch-action: none;
       cursor: move;
@@ -1058,6 +1106,11 @@
         <button class="view-mode-btn" id="btnViewLive" onclick="setViewMode('live')">Live Feed</button>
         <button class="view-mode-btn" id="btnViewHybrid" onclick="setViewMode('hybrid')">Hybrid</button>
       </div>
+      <div class="mode-switcher">
+        <button class="mode-btn active" id="btnModeAIS" onclick="switchMode('ais-only')">AIS-Only</button>
+        <button class="mode-btn" id="btnModeHybrid" onclick="switchMode('hybrid')">Hybrid</button>
+        <button class="mode-btn" id="btnModeHub" onclick="goToHub()" title="Back to mode selector">🏠 Hub</button>
+      </div>
       <button class="theme-toggle" onclick="toggleTheme()">Theme</button>
     </div>
 
@@ -1377,6 +1430,139 @@
   </div>
 
   <script src="./js/app.js"></script>
+
+  <script>
+    // ─────────────────────────────────────────────
+    // Mode Switcher Functions
+    // ─────────────────────────────────────────────
+
+    const MODE_CONFIG = {
+      currentMode: new URLSearchParams(window.location.search).get('mode') || 'ais-only',
+      backends: {
+        ais: 'http://localhost:8000',
+        marvis: 'http://localhost:5000'
+      }
+    };
+
+    // Initialize mode display on page load
+    window.addEventListener('load', () => {
+      updateModeDisplay();
+      configureViewButtons();
+    });
+
+    function updateModeDisplay() {
+      const mode = MODE_CONFIG.currentMode;
+      const btnAIS = document.getElementById('btnModeAIS');
+      const btnHybrid = document.getElementById('btnModeHybrid');
+
+      if (mode === 'ais-only') {
+        btnAIS.classList.add('active');
+        btnHybrid.classList.remove('active');
+      } else if (mode === 'hybrid') {
+        btnHybrid.classList.add('active');
+        btnAIS.classList.remove('active');
+      }
+    }
+
+    function configureViewButtons() {
+      const mode = MODE_CONFIG.currentMode;
+      const btnViewAIS = document.getElementById('btnViewAIS');
+      const btnViewLive = document.getElementById('btnViewLive');
+      const btnViewHybrid = document.getElementById('btnViewHybrid');
+      const cameraStatus = document.getElementById('cameraStatus');
+
+      if (mode === 'ais-only') {
+        if (btnViewAIS) btnViewAIS.classList.add('active');
+        if (btnViewLive) btnViewLive.style.display = 'none';
+        if (btnViewHybrid) btnViewHybrid.style.display = 'none';
+        if (cameraStatus) cameraStatus.style.display = 'none';
+      } else {
+        if (btnViewLive) btnViewLive.style.display = '';
+        if (btnViewHybrid) btnViewHybrid.style.display = '';
+        if (cameraStatus) cameraStatus.style.display = '';
+      }
+    }
+
+    function setViewMode(viewMode) {
+      const mode = MODE_CONFIG.currentMode;
+      const btnViewAIS = document.getElementById('btnViewAIS');
+      const btnViewLive = document.getElementById('btnViewLive');
+      const btnViewHybrid = document.getElementById('btnViewHybrid');
+      const videoWindow = document.getElementById('videoWindow');
+
+      [btnViewAIS, btnViewLive, btnViewHybrid].forEach(btn => btn && btn.classList.remove('active'));
+
+      if (mode === 'ais-only') {
+        if (btnViewAIS) btnViewAIS.classList.add('active');
+        if (videoWindow) videoWindow.style.display = 'none';
+        return;
+      }
+
+      if (viewMode === 'ais') {
+        if (btnViewAIS) btnViewAIS.classList.add('active');
+        if (videoWindow) videoWindow.style.display = 'none';
+      } else {
+        if (viewMode === 'live' && btnViewLive) btnViewLive.classList.add('active');
+        if (viewMode === 'hybrid' && btnViewHybrid) btnViewHybrid.classList.add('active');
+        if (videoWindow) videoWindow.style.display = '';
+      }
+    }
+
+    function closeVideoWindow() {
+      const videoWindow = document.getElementById('videoWindow');
+      const btnViewAIS = document.getElementById('btnViewAIS');
+      const btnViewLive = document.getElementById('btnViewLive');
+      const btnViewHybrid = document.getElementById('btnViewHybrid');
+
+      if (videoWindow) videoWindow.style.display = 'none';
+      if (btnViewAIS) btnViewAIS.classList.add('active');
+      if (btnViewLive) btnViewLive.classList.remove('active');
+      if (btnViewHybrid) btnViewHybrid.classList.remove('active');
+    }
+
+    function switchMode(newMode) {
+      console.log(`🔄 Switching to ${newMode} mode...`);
+      MODE_CONFIG.currentMode = newMode;
+      localStorage.setItem('selectedMode', newMode);
+
+      // Call mode API to switch backend
+      const apiUrl = `${MODE_CONFIG.backends.ais}/api/mode`;
+      fetch(apiUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ mode: newMode })
+      })
+      .then(r => r.json())
+      .then(data => {
+        console.log('Mode switch response:', data);
+        // Update button states and navigate
+        updateModeDisplay();
+        setTimeout(() => {
+          window.location.href = `${MODE_CONFIG.backends.ais}/dashboard?mode=${newMode}`;
+        }, 300);
+      })
+      .catch(e => {
+        console.error('Mode switch error:', e);
+        // Still update UI even if API call fails
+        updateModeDisplay();
+        setTimeout(() => {
+          window.location.href = `${MODE_CONFIG.backends.ais}/dashboard?mode=${newMode}`;
+        }, 200);
+      });
+    }
+
+    function goToHub() {
+      console.log('🏠 Going back to Hub...');
+      setTimeout(() => {
+        window.location.href = `${MODE_CONFIG.backends.ais}/hub.html`;
+      }, 200);
+    }
+
+    // Keyboard shortcut to open hub (Press 'H')
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'h' || e.key === 'H') goToHub();
+    });
+  </script>
 
 </body>
 

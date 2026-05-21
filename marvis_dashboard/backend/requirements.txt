@@ -1,0 +1,15 @@
+# Marvis Backend — Python dependencies
+# Install with: pip install -r requirements.txt
+
+# Web framework
+flask>=3.0.0
+
+# Computer vision (video processing + frame encoding)
+opencv-python>=4.9.0
+
+# Numerical
+numpy>=1.26.0
+
+# Deep learning (LSTM predictor — shared with AIS backend)
+torch>=2.2.0
+torchvision>=0.17.0
