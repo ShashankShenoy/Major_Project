@@ -37,8 +37,19 @@ class LSTMPredictor:
     # -------------------------------
     def load_model(self, model_path):
         try:
+            try:
+                state_dict = torch.load(
+                    model_path,
+                    map_location=self.device,
+                    weights_only=True
+                )
+            except TypeError:
+                state_dict = torch.load(
+                    model_path,
+                    map_location=self.device
+                )
             self.model.load_state_dict(
-                torch.load(model_path, map_location=self.device)
+                state_dict
             )
             self.model.eval()
             self.trained = True

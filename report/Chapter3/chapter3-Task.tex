@@ -1,0 +1,38 @@
+\chapter{Analysis and Design of the Pipelined Architecture}
+
+The architecture of the proposed maritime surveillance system is engineered as a highly optimized, multi-stage modular pipeline. Each stage serves a mathematically distinct purpose, receiving raw or partially processed data from the preceding module, applying complex algorithmic transformations, and forwarding enriched state vectors to the next stage. This decoupled architectural design ensures operational clarity, facilitates independent module debugging, and guarantees the scalability necessary to maintain real-time throughput \citep{Ref04}.
+
+\section{Top-Level System Architecture}
+The system ingests two fundamentally distinct, asynchronous data streams: a continuous optical video stream (sourced from coastal CCTV, UAVs, or satellite optics) and an Automatic Identification System (AIS) telemetry stream (containing vessel MMSI identifiers, precise geographic coordinates, and navigational metrics) \citep{Ref05}. 
+
+These streams are initially processed in parallel. The optical pathway sequentially localizes ships utilizing the YOLOv8 bounding-box regression model and tracks their temporal identities across frames using the DeepOCSORT algorithm. Concurrently, the AIS pathway applies dynamic frame-rate interpolation to upsample the sparse radio signals. These two streams collide at the \textbf{Sensor Fusion Layer}, which employs a Kalman filter to reconcile the high-frequency but spatially noisy video tracking data with the low-frequency but highly precise AIS observations. Finally, these fused, enriched trajectory sequences are fed into an LSTM recurrent neural network for path prediction, culminating in a geospatial land-mask filter that ensures all predicted coordinates remain within physically valid aquatic zones.
+
+\section{Detailed Architectural Specifications}
+
+\subsection{Detection Module Constraints (YOLOv8)}
+To achieve a balance between high recall (detecting distant vessels) and precision (suppressing false positives from wave crests), the YOLOv8 module is strictly configured. The network requires a minimum input tensor resolution of $1280 \times 720$ to preserve the pixel density of horizon-level targets. During inference, the confidence threshold is clamped at 0.5, and the Intersection over Union (IoU) threshold for Non-Maximum Suppression (NMS) is set to 0.45. This prevents overlapping bounding boxes from cluttering the tracker during dense port congestion scenarios \citep{Ref06}.
+
+\subsection{Temporal Tracking Module (DeepOCSORT)}
+The DeepOCSORT tracker is instantiated with a highly specific configuration tailored for maritime dynamics. A track is only confirmed as valid after a minimum hit count of 3 consecutive frames, filtering out transient optical noise. Conversely, a track is only officially classified as "lost" after a maximum age of 30 frames without a detection association. The appearance-based Re-Identification (ReID) relies on deep feature embeddings extracted via OSNet, utilizing Cosine Similarity as the primary mathematical distance metric to associate newly detected vessels with historically occluded tracks \citep{Ref07}.
+
+\subsection{Sensor Fusion and Spatial Alignment}
+The most critical design challenge was mapping 2D pixel space into 3D geographic coordinate space. The system utilizes a pre-computed Homographic Transformation Matrix, derived from intrinsic camera calibration parameters (focal length, sensor size) and extrinsic deployment parameters (camera altitude, tilt angle). 
+
+Once the pixel centroids are projected into rough latitude/longitude space, the system uses the Haversine formula to compute the great-circle distance between the optical track and the incoming AIS coordinates. The Hungarian matching algorithm (Kuhn-Munkres) is then deployed to solve the bipartite graph matching problem, ensuring the optimal global assignment of AIS telemetry to optical bounding boxes \citep{Ref08}. 
+
+\subsection{Predictive State Modeling (LSTM)}
+Rather than relying on linear Kalman extrapolation, which fails during complex maritime manoeuvres (such as docking or evasive routing), the system utilizes a deep Long Short-Term Memory (LSTM) network. The LSTM is designed to accept a sliding temporal window of the past 30 timesteps ($t-30$ to $t_{0}$). The input feature vector at each timestep is highly multi-dimensional, comprising: $[Latitude, Longitude, SOG, \sin(COG), \cos(COG), Class\_Encoding]$. The trigonometric encoding of the Course Over Ground (COG) is a critical design choice to eliminate the discontinuity problem at 360/0 degrees \citep{Ref09}.
+
+\subsection{Hardware and Throughput Specifications}
+To satisfy the rigid requirement of real-time operation (minimum 30 FPS inference speed), the software architecture relies on parallelized tensor operations. The design mandates an NVIDIA GPU ecosystem supporting CUDA 11.x or higher, with a minimum VRAM capacity of 6GB to simultaneously host the YOLOv8 weights, OSNet embeddings, and the LSTM inference graphs in memory.
+
+% PROVISION FOR IMAGE: System Architecture Diagram
+\begin{figure}[htb]
+\centering
+    % \includegraphics[width=0.95\textwidth]{Figures/system_architecture_diagram.png} 
+	\caption{Comprehensive block diagram illustrating the data flow from parallel video and AIS ingestion, through the Kalman fusion layer, into the LSTM predictor.}
+	\label{fig:detailed_architecture}
+\end{figure}
+
+\section{Summary of Design Choices}
+Every layer of this pipeline was the result of rigorous empirical pre-analysis. YOLOv8 was selected over earlier iterations due to its anchor-free architecture, which excels at small object detection. DeepOCSORT was chosen over simpler SORT variants because standard SORT relies purely on Kalman intersection, which fails catastrophically when a ship is fully occluded by a larger vessel; the addition of OSNet appearance embeddings solves this. Ultimately, the synthesis of these carefully selected algorithms results in a system capable of achieving high-fidelity, predictive maritime situational awareness.

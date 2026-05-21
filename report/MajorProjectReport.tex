@@ -1,0 +1,178 @@
+\documentclass[12pt,oneside,a4paper]{book} % This style for A4 format.
+\input{./AuxFiles/Packages}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% Document settings
+% FIX 1: Removed the stray \includegraphics that was inside \title{}
+\title{Multi-Object Ship Tracking and Predictive Path Modeling for Maritime Surveillance}
+\subCode{CS481P}
+\Department[CSE]{Computer Science and Engineering}
+\academicYear{2026-27}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% Report Type:
+%%%%%%%%%%%%%%%%%% For Plagiarism Check %%%%%%%%%%%%%%%%%%%%%%%
+%\EnPlagReport
+
+%%%%%%%%%%%%%%%%%%%%%% DTL report %%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%\DTLProject
+
+%%%%%%%%%%%%%%%%%%%%%% IDP report %%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%\IDPProject
+
+%%%%%%%%%%%%%%%%%%%%% Internship report %%%%%%%%%%%%%%%%%%%%%%%
+%\InternProject
+
+%%%%%%%%%%%%%%% Minor (or) Major report %%%%%%%%%%%%%%%
+%% Leave commented for Major project (default).
+%\MinorProject
+
+%%%%%%%%%%%%%%%%%%% For PG program %%%%%%%%%%%%%%%%%%%
+%\pgProgram
+\MastersIn[M.Tech]{Master of Technology}
+\pgProgramName{VLSI Design \& Embedded Systems}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% Student Details
+\stuNameA{Shashank Shenoy B}
+\stuUSNA{1RV22CS183}
+\stuNameB{Shreyashwini R}
+\stuUSNB{1RV22CS192}
+\stuNameC{T Vinay}
+\stuUSNC{1RV22CS215}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% Guide Related commands
+%% Internal Guide %%
+\guideNameA{Dr. Manomani S}
+\guideDesignationA{Assistant Professor}
+\guideDeptA[CSE]{Computer Science and Engineering}
+\guideOrgA{RV College of Engineering}
+
+%% External Guide %%
+\guideNameB{Dr. Minal Moharir}
+\guideDesignationB{Professor}
+\guideDeptB{Dept. of CSE}
+\guideOrgB{RV College of Engineering}
+
+%\guideNameC{Dr. Ramavenkateshwaran}
+%\guideDesignationC{Assistant Professor}
+%\guideDeptC{Dept. of ECE}
+%\guideOrgC{RV College of Engineering}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% Esteemed members related commands
+%% Panel Members %%
+\panelMemberNameA{Dr. Kariyappa}
+\panelMemberDesigA{Professor}
+\panelMemberDeptA[ECE]{Electronics and Communication Engineering}
+\panelMemberNameB{Prof. P N Jayanthi}
+\panelMemberDesigB{Assistant Professor}
+\panelMemberDeptB[ECE]{Electronics and Communication Engineering}
+
+%% Project co-ordinators
+\projectCoOrdNameA{Dr. Chetana G}
+\projectCoOrdDesigA{Assistant Professor}
+\projectCoOrdDeptA[ECE]{Electronics and Communication Engineering}
+\projectCoOrdNameB{Dr. P N Jayanthi}
+\projectCoOrdDesigB{Assistant Professor}
+\projectCoOrdDeptB[ECE]{Electronics and Communication Engineering}
+
+%%%%%%%%%%%%%%%%% Esteemed Members %%%%%%%%%%%%%%%%%%
+\HOD{Dr. Shanta Rangaswamy}
+\Principal{Dr. K. N. Subramanya}
+\DeanAcademics{Dr. M.V. Renukadevi}
+\VicePrincipal{Dr. Geetha K S}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\QRurl{}
+
+%%%%%%%%%%%%%%%%%%% Draft report %%%%%%%%%%%%%%%%%%
+%\DraftCopy
+
+%%%%%%%%%%%%%%%%%% Glossaries & Acronyms %%%%%%%%%%%%%%%%%%
+\newglossary[sym]{symbolList}{sym1}{sym2}{List of Symbols}
+\makeglossaries
+\loadglsentries{./AuxFiles/Glossaries}
+\renewcommand{\glspostdescription}{}
+
+%%%%%%%%%%%%%%%% Bibliography %%%%%%%%%%%%%%%%%%%%%
+\usepackage[backend=bibtex,style=ieee]{biblatex}
+\addbibresource{./AuxFiles/ProjectBib.bib}
+
+%%%%%%%%%%%%%%%% WaterMark %%%%%%%%%%%%%%%%%%%%%
+\usepackage{background}
+\backgroundsetup{scale=1, angle=0, firstpage=false, opacity=0.5, contents={
+\begin{tikzpicture}[remember picture, overlay]
+\node at ([yshift=0pt, xshift=0pt]current page.center){\includegraphics[width=0.6\textwidth]{Figures/RVlogoVecW}};
+\end{tikzpicture}
+}}
+
+\begin{document}
+	\NoBgThispage
+	\maketitle
+	% FIX 2: Removed the \newpage here — it was forcing a break
+	% before the title page finished, pushing dept/year to page 2
+	\ifDrf
+	\else
+	\begin{spacing}{1.5}
+		\input{./CoverPages/Certificate}
+
+		\newpage
+		\input{./CoverPages/Declaration}
+
+		\newpage
+		\input{./CoverPages/Ack}
+
+		\newpage
+		\pagenumbering{roman}
+
+		\chapter*{Abstract}
+		\input{./CoverPages/Abstract}
+
+	\end{spacing}
+	\newpage
+	\pagestyle{fplain}
+	\begin{spacing}{1.5}
+		\tableofcontents
+	\end{spacing}
+	\newpage
+	\begin{spacing}{1.5}
+		\cleardoublepage
+		\addcontentsline{toc}{chapter}{\listfigurename}
+		\listoffigures
+	\end{spacing}
+	\newpage
+	\begin{spacing}{1.5}
+		\cleardoublepage
+		\addcontentsline{toc}{chapter}{\listtablename}
+		\listoftables
+	\end{spacing}
+
+	\printglossary[type=\acronymtype, title=Abbreviations, toctitle=Abbreviations]
+	\printglossary[type=symbolList, title=List of Symbols, toctitle=List of Symbols]
+	\fi
+
+	\mainmatter
+	\pagestyle{mplain}
+	\glsresetall
+	\begin{spacing}{1.5}
+		\input{./Chapter1/chapter1-Intro}
+		\input{./Chapter2/chapter2-Funda}
+		\input{./Chapter3/chapter3-design}
+		\input{./Chapter4/chapter4-implement}
+		\input{./Chapter5/chapter5-result}
+		\input{./Chapter6/chapter6-conclution}
+
+		\appendix
+		\input{./Appendix/Apndx}
+
+		\backmatter
+		\ifDrf
+		\else
+		\clearpage
+		\addcontentsline{toc}{chapter}{Bibliography}
+		\printbibliography
+		\fi
+	\end{spacing}
+\end{document}

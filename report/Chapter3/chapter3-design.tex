@@ -1,0 +1,31 @@
+\chapter{Tasks Performed and Problem Formulation}
+
+This chapter serves as the technical heart of the project initiation phase, detailing the chronological execution of tasks, the formal problem statement, and the structured methodologies employed to arrive at the final system architecture. It outlines the transition from initial conceptual research to the tangible execution of highly specific engineering tasks.
+
+\section{Problem Statement and Core Objectives}
+Current maritime surveillance infrastructures—predominantly reliant on disparate radar systems, voluntary Automatic Identification Systems (AIS), and manual closed-circuit television (CCTV) monitoring—are fundamentally disjointed. They lack the cohesive ability to provide real-time, visual, and predictive oversight over highly congested maritime zones \citep{Ref01}. Radar provides spatial awareness without visual classification; AIS provides precise telemetry but is entirely blind to non-cooperative or "dark" vessels; and manual video monitoring is severely bottlenecked by human cognitive fatigue. 
+
+Therefore, the formal problem statement of this project is defined as follows: \textit{To design, train, and deploy an automated, end-to-end computer vision and machine learning pipeline capable of fusing noisy optical video data with sparse AIS telemetry to detect, persistently track, and accurately forecast the future spatial trajectories of multiple maritime vessels in real-time, under dynamic environmental conditions.}
+
+\section{Summary of Tasks Performed}
+The development of this complex surveillance architecture was executed over a structured, multi-phase timeline, adhering strictly to Agile software development methodologies. The assignments completed during this tenure are broken down into the following critical phases:
+
+\subsection{Phase 1: Initial Research and Feasibility Analysis (Weeks 1-3)}
+The project commenced with an exhaustive literature review encompassing over 75 peer-reviewed journal articles focusing on deep learning in maritime environments \citep{Ref02}. During this phase, I was tasked with benchmarking various object detection architectures (Faster R-CNN, SSD, YOLOv5, and YOLOv8) against maritime-specific constraints such as horizon glare and extreme scale variation. Concurrently, a feasibility study was conducted on various time-series prediction models, ultimately leading to the selection of Long Short-Term Memory (LSTM) networks over standard Recurrent Neural Networks (RNNs) and pure Kalman extrapolation.
+
+\subsection{Phase 2: Dataset Curation and Model Fine-Tuning (Weeks 4-7)}
+The second phase transitioned into hands-on data engineering. I was responsible for sourcing, aggregating, and preprocessing vast quantities of raw maritime video footage. This involved developing custom Python scripts using OpenCV to extract frames at optimal sampling intervals. Subsequently, I performed rigorous data annotation, defining highly accurate bounding boxes for various vessel classes (cargo ships, tankers, small boats). The culmination of this phase was the fine-tuning of the YOLOv8n and YOLOv8m weights on our custom dataset using a cloud-based NVIDIA GPU infrastructure, experimenting with advanced hyperparameters such as mosaic augmentation and dynamic learning rate scheduling to prevent model overfitting.
+
+\subsection{Phase 3: Tracking Integration and Sensor Fusion (Weeks 8-11)}
+Once spatial detection was achieved, the focus shifted to temporal consistency. I integrated the DeepOCSORT algorithm, configuring its internal OSNet feature extractor to perform appearance-based Re-Identification (ReID) \citep{Ref03}. The most mathematically complex task of this phase was the development of the sensor fusion module. I engineered a pipeline that ingested asynchronous, live AIS data streams via WebSockets, interpolated the sparse GPS coordinates to match the 30 FPS video feed, and utilized a Hungarian assignment algorithm combined with Haversine distance metrics to fuse the optical bounding boxes with the physical AIS telemetry.
+
+\subsection{Phase 4: Predictive Modeling and Dashboard Engineering (Weeks 12-15)}
+The final technical hurdle was the development of the trajectory forecasting module. I extracted thousands of historical trajectory sequences (comprising latitude, longitude, and Speed Over Ground) from the tracking module to serve as training data for the LSTM. After successfully training the LSTM to predict the next $K$ temporal steps, I built the final visualisation dashboard. This involved integrating Folium for interactive geospatial mapping and developing a land-mask filter to geometrically constrain the LSTM's predictions to valid navigable waters, ensuring operational realism.
+
+% PROVISION FOR IMAGE: Task Timeline/Gantt Chart
+\begin{figure}[htb]
+\centering
+    % \includegraphics[width=0.9\textwidth]{Figures/gantt_chart.png} 
+	\caption{Chronological breakdown of the project phases, illustrating the Agile workflow from dataset curation to final dashboard deployment.}
+	\label{fig:task_timeline}
+\end{figure}

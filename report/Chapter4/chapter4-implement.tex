@@ -1,0 +1,45 @@
+\chapter{Implementation of the Pipelined Surveillance System}
+
+Translating a comprehensive architectural design into a robust, real-time software pipeline requires meticulous attention to computational efficiency, memory management, and data-flow integration. This chapter explicitly details the programmatic implementation of the maritime surveillance system. It covers the establishment of the development environment, the rigorous procedures utilized for dataset curation and augmentation, the specific hyperparameter configurations for neural network training, and the final integration of the sensor fusion and geospatial visualisation modules \citep{Ref10}.
+
+% PROVISION FOR IMAGE: Pipeline Flowchart
+\begin{figure}[htb]
+\centering
+	% \includegraphics[width=0.9\textwidth]{Chapter4/Figures/pipeline.jpeg}	
+	\caption{High-level implementation pipeline demonstrating the transition from raw data ingestion to the final Folium interactive dashboard.}
+	\label{fig:implementation_pipeline}
+\end{figure}
+
+\section{Development Environment and Core Dependencies}
+The proposed system is entirely software-defined and was implemented using Python 3.8 to ensure maximum compatibility with modern deep learning libraries. \textbf{PyTorch} serves as the foundational deep learning framework, powering both the YOLOv8 spatial object detector and the LSTM temporal sequence predictor. This framework was selected for its dynamic computational graphing capabilities and unparalleled support for parallelized GPU training \citep{Ref11}.
+
+Video ingestion, frame extraction, and real-time bounding box rendering are handled by \textbf{OpenCV (cv2)}, which leverages highly optimized underlying C++ routines to bypass Python's Global Interpreter Lock (GIL) limitations during heavy I/O operations. Intermediate mathematical computations, specifically the array manipulations required for track buffering and bounding box intersection logic, are managed via \textbf{NumPy} and \textbf{Pandas}. Finally, while \textbf{Matplotlib} was used during the debugging phase to plot loss curves and offline trajectory tracks, \textbf{Folium} (a Python wrapper for Leaflet.js) was implemented to generate the final, interactive HTML-based geospatial dashboard.
+
+\section{Dataset Preparation, Annotation, and Augmentation}
+Neural networks are fundamentally constrained by the quality and diversity of their training data. To ensure the YOLOv8 model could generalize across complex marine environments, a custom maritime dataset was synthesized. Raw, high-definition video footage was captured from various vantage points (UAVs, coastal towers) and programmatically segmented into individual frames using OpenCV, ensuring a uniform sampling interval to prevent temporal data leakage between the training and validation sets \citep{Ref12}.
+
+Each frame underwent rigorous manual annotation. Bounding boxes were drawn around all visible vessel instances, and labels were exported in the standard YOLO format (Class ID, normalized X-center, Y-center, Width, Height). The final dataset was rigorously partitioned into a 70\% training, 20\% validation, and 10\% hold-out test split. 
+
+To forcefully prevent the network from overfitting to specific lighting conditions or background wave patterns, extensive data augmentation was applied during the PyTorch DataLoader phase. This included dynamic brightness and contrast jittering (simulating dawn/dusk illumination), horizontal flipping, and most importantly, \textbf{Mosaic Augmentation}. Mosaic augmentation combines four distinct training images into a single grid, artificially shrinking the scale of the vessels and forcing the network to learn incredibly robust, scale-invariant feature representations \citep{Ref13}.
+
+\section{Model Fine-Tuning: YOLOv8}
+The implementation of the detection module utilized transfer learning. Rather than initializing the weights randomly, the YOLOv8 network was instantiated with pre-trained COCO (Common Objects in Context) weights. This significantly accelerated convergence by leveraging previously learned low-level edge and texture filters. 
+
+The model was fine-tuned over 150 epochs utilizing a Stochastic Gradient Descent (SGD) optimizer. A Cosine Annealing learning rate scheduler was implemented to aggressively traverse the loss landscape initially, before slowly decaying the learning rate to settle into the optimal global minima. An early stopping callback was programmed to halt training if the Mean Average Precision (mAP@0.5) on the validation set failed to improve for 25 consecutive epochs. During live runtime, the model processes the video stream frame-by-frame, immediately discarding any detections below the strict 0.5 confidence threshold before passing the data tensors to the tracking module \citep{Ref14}.
+
+\section{Tracking Implementation: DeepOCSORT}
+The confirmed YOLOv8 detection tensors are routed directly into the DeepOCSORT tracker class. The implementation of this tracker relies heavily on the \textbf{OSNet} deep network architecture to extract 512-dimensional appearance embedding vectors for every detected bounding box. 
+
+At each frame step $t$, the algorithm utilizes a Kalman filter to project the expected pixel locations of all active tracks from step $t-1$. It then computes an Intersection over Union (IoU) cost matrix between the predicted locations and the new YOLOv8 detections. To resolve ambiguities—such as when two ships cross paths—the algorithm computes the Cosine Similarity between the OSNet feature embeddings of the historical track and the new detection. Successful matches update the Kalman covariance matrices, while unmatched tracks are placed in a "lost" buffer for up to 30 frames before being permanently deleted from memory \citep{Ref15}.
+
+\section{Sensor Fusion: AIS and Kalman Filtering}
+Concurrently, the backend utilizes an asynchronous WebSocket client to ingest live AIS data payloads (MMSI, Latitude, Longitude, SOG, COG). Because AIS data is broadcast sporadically (often every 10-30 seconds depending on vessel speed), a linear interpolation script was implemented to artificially upsample the AIS telemetry to match the 30 Hz optical video loop.
+
+A pre-calibrated homographic transformation matrix projects the optical pixel centroids into latitude/longitude space. The system calculates the Haversine distance between all optical tracks and AIS broadcasts within a localized radius. A standard Kalman Filter was explicitly coded to fuse these data points. The state vector is defined as $[x, y, \dot{x}, \dot{y}]^{T}$. The Kalman "prediction" step relies on the high-frequency optical frame updates, while the Kalman "update" step relies on the sparse, high-fidelity AIS GPS coordinates, yielding a smoothed, mathematically stable trajectory \citep{Ref16}.
+
+\section{Trajectory Forecasting and Geospatial Visualisation}
+The smoothed feature sequences derived from the Kalman filter are buffered into sliding windows of $N=30$ timesteps. These tensors are fed into the PyTorch LSTM model, which comprises two stacked hidden layers of 128 units each, followed by a linear projection layer that outputs the predicted $[Latitude, Longitude]$ coordinates for the next $K$ steps.
+
+To prevent the LSTM from hallucinating physically impossible routes (e.g., predicting that a ship will traverse across a peninsula), a \textbf{Land Mask Filter} was implemented using a high-resolution GeoTIFF shoreline matrix. Any predicted geographic coordinate that intersects with a land polygon is automatically mathematically snapped to the nearest valid aquatic coordinate.
+
+Finally, the visualization engine concurrently generates two outputs: an OpenCV-rendered video stream overlaid with dynamic bounding boxes, unique ID tags, and motion vectors; and an interactive Folium HTML map. The Folium map dynamically updates via JavaScript, rendering live ship markers, trailing historical path polylines, and forecasted trajectory arcs, providing command-center operators with unparalleled, real-time situational awareness.

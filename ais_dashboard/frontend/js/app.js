@@ -33,6 +33,63 @@ let showArrows = true;
 let showHeatmap = false;
 let showPorts = false;
 
+function getShipKey(ship) {
+  if (!ship) return null;
+  if (ship.mmsi !== undefined && ship.mmsi !== null) return `ais_${ship.mmsi}`;
+  if (ship.id) return String(ship.id);
+  if (ship.name) return `name_${ship.name}`;
+  return null;
+}
+
+function normalizeUnifiedShip(ship) {
+  const pos = Array.isArray(ship.pos)
+    ? ship.pos
+    : Array.isArray(ship.gps)
+      ? [ship.gps[0], ship.gps[1]]
+      : (ship.gps_lon !== undefined && ship.gps_lat !== undefined)
+        ? [ship.gps_lon, ship.gps_lat]
+        : null;
+
+  const track = Array.isArray(ship.track) ? ship.track : [];
+  const predicted = Array.isArray(ship.predicted)
+    ? ship.predicted
+    : Array.isArray(ship.predicted_path_gps)
+      ? ship.predicted_path_gps.map(pt => [pt[1], pt[0]])
+      : [];
+
+  return {
+    ...ship,
+    pos,
+    track,
+    predicted,
+    sog: ship.sog ?? ship.speed ?? 0,
+    cog: ship.cog ?? ship.heading ?? 0,
+    shipKey: getShipKey(ship)
+  };
+}
+
+function normalizeWsMessage(message) {
+  if (message.type === "frame" && Array.isArray(message.ships)) {
+    return message.ships
+      .map(normalizeUnifiedShip)
+      .filter(ship => Array.isArray(ship.pos) && ship.pos.length === 2);
+  }
+
+  if (message.type === "unified" && Array.isArray(message.ais_ships)) {
+    return message.ais_ships
+      .map(ship => ({ ...ship, shipKey: getShipKey(ship) }))
+      .filter(ship => Array.isArray(ship.pos) && ship.pos.length === 2);
+  }
+
+  if (Array.isArray(message)) {
+    return message
+      .map(ship => ({ ...ship, shipKey: getShipKey(ship) }))
+      .filter(ship => Array.isArray(ship.pos) && ship.pos.length === 2);
+  }
+
+  return null;
+}
+
 // ─────────────────────────────
 // THEME SYSTEM
 // ─────────────────────────────
@@ -273,7 +330,7 @@ function setupMapClickHandler() {
     }
     const features = map.queryRenderedFeatures(e.point, { layers: ["ships-layer"] });
     if (features.length > 0) {
-      selectShip(features[0].properties.mmsi);
+      selectShip(features[0].properties.ship_key || features[0].properties.mmsi);
       return;
     }
     document.getElementById("lat").value = e.lngLat.lat.toFixed(5);
@@ -311,9 +368,26 @@ function selectShip(mmsi) {
   scheduleRender();
 }
 
-ws.onopen = () => console.log("Connected");
+ws.onopen = () => {
+  console.log("Connected to AIS backend");
+  // Auto-start tracking at default Singapore Strait location on connect
+  setTimeout(() => {
+    if (ws.readyState === WebSocket.OPEN) {
+      const lat = parseFloat(document.getElementById('lat')?.value) || 1.264;
+      const lon = parseFloat(document.getElementById('lon')?.value) || 103.84;
+      sessionStartTime = Date.now();
+      ws.send(JSON.stringify({ type: 'start', lat, lon }));
+      if (map && mapLoaded) map.flyTo({ center: [lon, lat], zoom: 9 });
+      showToast('AIS tracking started — Singapore Strait');
+    }
+  }, 1200);
+};
 ws.onmessage = (event) => {
-  latestShips = JSON.parse(event.data);
+  const message = JSON.parse(event.data);
+  const normalizedShips = normalizeWsMessage(message);
+  if (normalizedShips) {
+    latestShips = normalizedShips;
+  }
   scheduleRender();
   updateAnalytics();
   checkAlerts();
@@ -430,13 +504,13 @@ function renderShips() {
   const dests = [], headings = [], arrows = [], speedCircles = [], collisions = [], heatmapPoints = [];
 
   latestShips.forEach(ship => {
-    const selected = ship.mmsi === selectedShip ? 1 : 0;
+    const selected = ship.shipKey === selectedShip ? 1 : 0;
     const riskColor = getRiskColor(ship);
 
     ships.push({
       type: "Feature",
       geometry: { type: "Point", coordinates: ship.pos },
-      properties: { mmsi: ship.mmsi, selected, risk_color: riskColor }
+      properties: { mmsi: ship.mmsi, ship_key: ship.shipKey, selected, risk_color: riskColor }
     });
 
     speedCircles.push({
@@ -507,7 +581,7 @@ function updateVesselDetails() {
     return;
   }
 
-  const ship = latestShips.find(s => s.mmsi === selectedShip);
+  const ship = latestShips.find(s => s.shipKey === selectedShip);
   if (!ship) return;
 
   const stats = ship.trackStats || {};
@@ -614,7 +688,7 @@ function initializeSearch() {
     results.innerHTML = '';
     if (query.length < 2) return;
     const matches = latestShips.filter(s =>
-      s.name.toLowerCase().includes(query) || s.mmsi.toString().includes(query)
+      s.name.toLowerCase().includes(query) || String(s.mmsi ?? s.id ?? '').includes(query)
     ).slice(0, 5);
     matches.forEach(ship => {
       const div = document.createElement('div');
@@ -627,7 +701,7 @@ function initializeSearch() {
 }
 
 function selectVesselFromSearch(ship) {
-  selectedShip = ship.mmsi;
+  selectedShip = ship.shipKey;
   document.getElementById('vesselSearch').value = '';
   document.getElementById('searchResults').innerHTML = '';
   if (map && ship.pos) {
@@ -699,8 +773,8 @@ function toggleComparisonMode() {
 
 function addToComparison() {
   if (!selectedShip) { showToast('Select a vessel first'); return; }
-  const ship = latestShips.find(s => s.mmsi === selectedShip);
-  if (ship && !comparisonVessels.find(v => v.mmsi === ship.mmsi)) {
+  const ship = latestShips.find(s => s.shipKey === selectedShip);
+  if (ship && !comparisonVessels.find(v => v.shipKey === ship.shipKey)) {
     comparisonVessels.push(ship);
     showToast(`Added ${ship.name} to comparison`);
     if (comparisonVessels.length >= 1) showComparisonView();
@@ -734,7 +808,7 @@ function showComparisonView() {
 
 function goToVessel() {
   if (selectedShip && map) {
-    const ship = latestShips.find(s => s.mmsi === selectedShip);
+    const ship = latestShips.find(s => s.shipKey === selectedShip);
     if (ship && ship.pos) {
       map.flyTo({ center: ship.pos, zoom: 12, duration: 800 });
     }
@@ -743,7 +817,7 @@ function goToVessel() {
 
 function exportVesselData() {
   if (!selectedShip) return;
-  const ship = latestShips.find(s => s.mmsi === selectedShip);
+  const ship = latestShips.find(s => s.shipKey === selectedShip);
   if (!ship || !ship.track) return;
   let csv = 'Latitude,Longitude,Speed,Course\n';
   ship.track.forEach(pt => {
@@ -961,7 +1035,7 @@ function showDataSourceDashboard() {
     const section = document.getElementById("vesselDetailsSection");
     const noSection = document.getElementById("noSelectionSection");
     if (!selectedShip) { section.style.display = 'none'; noSection.style.display = 'block'; return; }
-    const ship = latestShips.find(s => s.mmsi === selectedShip);
+    const ship = latestShips.find(s => s.shipKey === selectedShip);
     if (!ship) return;
     const stats = ship.trackStats || {};
     const risk = getRiskScore(ship);
@@ -987,6 +1061,60 @@ function showDataSourceDashboard() {
   };
 })();
 
+// ─────────────────────────────
+// MODE & VIEW SWITCHING
+// ─────────────────────────────
+
+function goToHub() {
+  window.location.href = 'http://localhost:8000/';
+}
+
+/**
+ * setViewMode — controls the right-side view in the map area
+ * 'ais'    → map only (no video window)
+ * 'live'   → video window shown (CV feed)
+ * 'hybrid' → both map + video window
+ */
+function setViewMode(mode) {
+  document.querySelectorAll('.view-mode-btn').forEach(btn => btn.classList.remove('active'));
+  const btnMap = { ais: 'btnViewAIS', live: 'btnViewLive', hybrid: 'btnViewHybrid' };
+  const activeBtn = document.getElementById(btnMap[mode]);
+  if (activeBtn) activeBtn.classList.add('active');
+
+  const videoWindow = document.querySelector('.video-window');
+  if (videoWindow) {
+    videoWindow.style.display = (mode === 'live' || mode === 'hybrid') ? 'flex' : 'none';
+  }
+}
+
+/**
+ * switchMode — switches between AIS-only and hybrid backend modes.
+ * Calls /api/mode on the AIS backend, then updates the UI accordingly.
+ */
+function switchMode(mode) {
+  document.querySelectorAll('.mode-btn').forEach(btn => btn.classList.remove('active'));
+  const btnMap = { 'ais-only': 'btnModeAIS', 'hybrid': 'btnModeHybrid' };
+  const activeBtn = document.getElementById(btnMap[mode]);
+  if (activeBtn) activeBtn.classList.add('active');
+
+  fetch('/api/mode', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ mode })
+  })
+  .then(r => r.json())
+  .then(data => {
+    console.log('Mode switch response:', data);
+    showToast(`Mode: ${mode === 'ais-only' ? 'AIS Only' : 'Hybrid'}`);
+    // In AIS-only mode the video window should be hidden
+    if (mode === 'ais-only') setViewMode('ais');
+  })
+  .catch(e => {
+    console.error('Mode switch error:', e);
+    showToast('Mode switch failed — check backend');
+  });
+}
+
 // Initialize systems
 setTimeout(() => {
   initializeSearch();
@@ -996,4 +1124,33 @@ setTimeout(() => {
   matchCVToAIS();
   generateLSTMPredictions();
   detectAnomalies();
+
+  // Display mode indicator
+  const params = new URLSearchParams(window.location.search);
+  const currentMode = params.get('mode') || 'hybrid';
+  const title = document.querySelector('.system-title span');
+  if (title) {
+    const modeLabel = currentMode === 'hybrid' ? '🚀 HYBRID' : '📡 AIS-ONLY';
+    title.innerHTML = `Maritime Intelligence System <span style="margin-left: 10px; font-size: 12px; opacity: 0.8;">${modeLabel}</span>`;
+  }
+
+  // Add mode switcher and Marvis link to top bar
+  const viewModeButtons = document.querySelector('.view-mode-buttons');
+  if (viewModeButtons && !document.querySelector('.mode-switcher')) {
+    const switcher = document.createElement('div');
+    switcher.className = 'mode-switcher';
+    switcher.style.cssText = 'display: flex; gap: 8px; align-items: center; margin-right: 8px;';
+
+    if (currentMode === 'hybrid') {
+      switcher.innerHTML = `
+        <a href="http://localhost:5000" target="_blank" style="padding: 6px 12px; background: #10b981; color: white; border-radius: 4px; text-decoration: none; font-size: 12px; white-space: nowrap;">📊 Marvis Analytics</a>
+      `;
+    }
+
+    switcher.innerHTML += `
+      <a href="http://localhost:8000/" style="padding: 6px 12px; background: var(--primary); color: white; border-radius: 4px; text-decoration: none; font-size: 12px;">Change Mode</a>
+    `;
+
+    viewModeButtons.parentNode.insertBefore(switcher, viewModeButtons);
+  }
 }, 500);

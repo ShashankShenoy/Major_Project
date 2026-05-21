@@ -11,16 +11,31 @@ function initializeMultiSourceSystem() {
 
 function matchCVToAIS() {
   cvDetections.forEach(cvDetection => {
-    const matchRadius = 0.05;
+    const matchRadius = 0.5; // 0.5 km
     const match = latestShips.find(ship => {
-      const dist = Math.sqrt(
-        Math.pow(ship.pos[1] - cvDetection.lat, 2) +
-        Math.pow(ship.pos[0] - cvDetection.lon, 2)
+      if (!ship.pos || ship.pos.length < 2) return false;
+      const dist = haversineDistance(
+        cvDetection.gps_lat || cvDetection.lat,
+        cvDetection.gps_lon || cvDetection.lon,
+        ship.pos[1],
+        ship.pos[0]
       );
       return dist < matchRadius;
     });
     cvDetection.matched = match ? match.mmsi : null;
   });
+}
+
+function haversineDistance(lat1, lon1, lat2, lon2) {
+  if (!lat1 || !lon1 || !lat2 || !lon2) return Infinity;
+  const R = 6371;
+  const dLat = (lat2 - lat1) * Math.PI / 180;
+  const dLon = (lon2 - lon1) * Math.PI / 180;
+  const a = Math.sin(dLat/2) * Math.sin(dLat/2) +
+    Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+    Math.sin(dLon/2) * Math.sin(dLon/2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+  return R * c;
 }
 
 function generateLSTMPredictions() {

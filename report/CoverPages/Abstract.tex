@@ -1,0 +1,16 @@
+\addcontentsline{toc}{chapter}{Abstract}\vspace{-1cm}
+%Border
+\begin{tikzpicture}[remember picture, overlay]
+  \draw[line width = 4pt] ($(current page.north west) + (0.75in,-0.75in)$) rectangle ($(current page.south east) + (-0.75in,0.75in)$);
+\end{tikzpicture}
+
+
+Maritime surveillance plays a crucial role in the protection of coastal security, vessel traffic management as well as the protection of marine ecosystems. The traditional systems, including radar, AIS and manual observation, are not scalable, accurate and real-time analysis and are also worse when faced with adverse conditions such as occlusion, different illumination, and even reflection on the water surface. They can not simultaneously monitor a number of vessels and predict the futures path, so they require an automated, vision-driven intelligent surveillance system.
+
+This work introduces an end-to-end AI-based maritime surveillance pipeline with three central aims: correct multi-ship recognition, continuous identity-preserving tracking, as well as the future path prediction. YOLOv8 is a real-time, per-frame, ship detector that uses bounding box regression. DeepOCSORT is an appearance-based Re-Identification (ReID) algorithm that combines a Kalman filter state estimator with appearance-based Re-Identification (ReID). The centroid trajectories extracted are processed in an LSTM network to predict future vessel positions, with motion parameters (speed, heading, and cardinal direction) being analytically computed using the inter-frame centroid displacement.
+
+The implementation of this system involves Python and uses PyTorch, OpenCV, NumPy, and Matplotlib to execute the system with CUDA-accelerated execution of the system on the GPUs to ensure a real-time throughput of the system. Assessment of maritime video sequences with dense traffic, occlusiveness and illumination variation ensured strong-detection, high-continuity of tracking, and consistent- multi-step LSTM-trajectory forecasting across all test cases.
+\gls{ic}
+
+Since it is a software-based system, hardware emulation cannot be used; however, the deployment-level validation on a physical GPU environment verified the real-time operational performance. The modular architecture provides a base to scale to multiple camera inputs and integrate with existing AIS and IoT infrastructure, setting a foundation to deploy maritime surveillance at production scale.
+\pagebreak
