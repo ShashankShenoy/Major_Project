@@ -582,9 +582,9 @@ function plotTrajectories(results) {
     annotations.push({x:xs[xs.length-1],y:ys[ys.length-1],text:`<b>${String(sid).padStart(2,'0')}</b>`,showarrow:false,font:{family:'Share Tech Mono',size:10,color:col},bgcolor:'rgba(8,13,20,0.75)',bordercolor:col,borderwidth:1,borderpad:3,xanchor:'left',yanchor:'middle',xshift:14});
     const pred=predTraj[sid]||[];
     if(pred.length){
-      const pxs=[xs[xs.length-1],...pred.map(p=>p[0])].map(v=>Math.max(xr[0],Math.min(xr[1],v)));
-      const pys=[ys[ys.length-1],...pred.map(p=>p[1])].map(v=>Math.max(yr[0],Math.min(yr[1],v)));
-      traces.push({x:pxs,y:pys,mode:'lines+markers',showlegend:false,line:{color:col,width:1.3,dash:'dot'},marker:{color:col,size:3,opacity:.45},opacity:.5,
+      const pxs=[xs[xs.length-1],...pred.map(p=>p[0])];
+      const pys=[ys[ys.length-1],...pred.map(p=>p[1])];
+      traces.push({x:pxs,y:pys,mode:'lines+markers',showlegend:false,line:{color:col,width:5,dash:'dot'},marker:{color:col,size:6,opacity:1,line:{width:0.5,color:'#fff'}},opacity:1,
         hovertemplate:`<b>PREDICTED · Ship ${sid}</b><br>X: %{x:.0f}<br>Y: %{y:.0f}<extra></extra>`});
       if(pxs.length>1){
         annotations.push({x:pxs[pxs.length-1],y:pys[pys.length-1],ax:pxs[pxs.length-2],ay:pys[pys.length-2],xref:'x',yref:'y',axref:'x',ayref:'y',showarrow:true,arrowhead:2,arrowsize:1,arrowwidth:1.5,arrowcolor:col,opacity:.55});

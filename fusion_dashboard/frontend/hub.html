@@ -40,6 +40,7 @@
       overflow-x: hidden;
     }
 
+    /* Animated grid background */
     body::before {
       content: '';
       position: fixed;
@@ -52,6 +53,7 @@
       z-index: 0;
     }
 
+    /* Radial glow */
     body::after {
       content: '';
       position: fixed;
@@ -188,6 +190,7 @@
       border-color: var(--bg3);
     }
 
+    /* Status badge */
     .card-badge {
       display: inline-block;
       font-family: var(--mono);
@@ -230,6 +233,7 @@
       flex-grow: 1;
     }
 
+    /* Feature list */
     .features {
       background: var(--bg2);
       border: 1px solid var(--bg3);
@@ -257,6 +261,7 @@
       flex-shrink: 0;
     }
 
+    /* Launch button */
     .launch-btn {
       font-family: var(--mono);
       font-size: .62rem;
@@ -347,7 +352,7 @@
       font-family: var(--mono);
       font-size: .6rem;
       letter-spacing: .04em;
-      padding: 9px 28px 9px 12px;
+      padding: 9px 12px;
       outline: none;
       cursor: pointer;
       transition: border-color .2s;
@@ -356,6 +361,7 @@
       background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%234a6070'/%3E%3C/svg%3E");
       background-repeat: no-repeat;
       background-position: right 10px center;
+      padding-right: 28px;
     }
 
     #videoFileSelect:hover,
@@ -409,8 +415,6 @@
     .btn-set-video:disabled {
       opacity: .45;
       cursor: not-allowed;
-      border-color: var(--bg3);
-      color: var(--textd);
     }
 
     .video-status-line {
@@ -422,7 +426,7 @@
       min-height: 1.2em;
       transition: color .3s;
     }
-    .video-status-line.ok  { color: var(--teal); }
+    .video-status-line.ok { color: var(--teal); }
     .video-status-line.err { color: var(--red); }
 
     /* ── STATUS PANEL ── */
@@ -549,7 +553,7 @@
         <button class="launch-btn" id="btnMarvis">▶ &nbsp; LAUNCH MARVIS MODULE</button>
       </div>
 
-      <!-- HYBRID -->
+      <!-- HYBRID / FUSION -->
       <div class="card hybrid card-loading" id="cardFusion" onclick="goToFusion()">
         <div class="card-badge" id="badgeFusion">CONNECTING</div>
         <div class="card-icon">🔀</div>
@@ -568,27 +572,25 @@
 
     </div>
 
-    <!-- VIDEO SELECTOR PANEL -->
-    <div class="video-panel">
+    <!-- VIDEO FILE SELECTOR -->
+    <div class="video-panel" id="videoPanel">
       <div class="video-panel-header">
-        <span class="video-panel-title">▶ &nbsp;Video Source — MARVIS &amp; Fusion Mode</span>
-        <span class="video-panel-hint" id="videosDirHint">Waiting for Fusion backend…</span>
+        <span class="video-panel-title">▶ Video Source — Fusion &amp; MARVIS</span>
+        <span class="video-panel-hint" id="videosDirHint">Loading video library…</span>
       </div>
       <div class="video-select-row">
-        <select id="videoFileSelect" disabled>
-          <option value="">Waiting for Fusion backend (port 9000)…</option>
+        <select id="videoFileSelect">
+          <option value="">Loading videos…</option>
         </select>
-        <div class="video-info-badge">
+        <div class="video-info-badge" id="videoInfoBadge">
           <span class="vdot"></span>
           <span id="videoSizeTxt">— MB</span>
         </div>
         <button class="btn-set-video" id="btnSetVideo" onclick="applyVideoSelection()" disabled>
-          ⚙ &nbsp;SET VIDEO
+          ⚙ SET VIDEO
         </button>
       </div>
-      <div class="video-status-line" id="videoStatusLine">
-        Select a video and click SET VIDEO before launching MARVIS or Fusion Mode.
-      </div>
+      <div class="video-status-line" id="videoStatusLine">Select a video above, then click SET VIDEO before launching Fusion Mode.</div>
     </div>
 
     <!-- STATUS PANEL -->
@@ -630,12 +632,14 @@
 
     let aisReady = false, marvisReady = false, fusionReady = false;
     let checkTimer = null, toastTimer = null;
-    let videoListLoaded = false;
+    let selectedVideoPath = '';
+    let videoApplied = false;
 
     // ── Clock ──
     function updateClock() {
+      const now = new Date();
       document.getElementById('utcClock').textContent =
-        new Date().toISOString().replace('T', ' ').slice(0, 19) + ' UTC';
+        now.toISOString().replace('T', ' ').slice(0, 19) + ' UTC';
     }
     setInterval(updateClock, 1000);
     updateClock();
@@ -677,7 +681,6 @@
         fusionReady = r.ok;
       } catch (_) { fusionReady = false; }
 
-      // Update status values
       const aisEl    = document.getElementById('aisStatus');
       const marvisEl = document.getElementById('marvisStatus');
       const fusionEl = document.getElementById('fusionStatus');
@@ -702,89 +705,93 @@
         checkTimer = null;
       } else {
         banner.classList.remove('hidden', 'ok');
-        if      (aisReady && !marvisReady)  bannerTx.textContent = 'AIS online — MARVIS backend initializing…';
-        else if (!aisReady && marvisReady)  bannerTx.textContent = 'MARVIS online — AIS backend initializing…';
+        if      (aisReady && !fusionReady)  bannerTx.textContent = 'AIS online — Fusion backend initializing…';
+        else if (!aisReady && fusionReady)  bannerTx.textContent = 'Fusion online — AIS backend initializing…';
         else                                bannerTx.textContent = 'Connecting to system backends — please wait…';
       }
 
-      // Load video list as soon as Fusion backend is up (only once)
-      if (fusionReady && !videoListLoaded) {
-        videoListLoaded = true;
-        loadVideoList();
-      }
+      // Load video list once fusion backend is up
+      if (fusionReady) loadVideoList();
     }
 
-    // ── Video library ──
+    // ── Video Library ──
     async function loadVideoList() {
-      const sel    = document.getElementById('videoFileSelect');
-      const hint   = document.getElementById('videosDirHint');
-      const setBtn = document.getElementById('btnSetVideo');
+      const sel     = document.getElementById('videoFileSelect');
+      const hint    = document.getElementById('videosDirHint');
+      const setBtn  = document.getElementById('btnSetVideo');
+      if (!sel) return;
 
       try {
         const res  = await fetch(`${CONFIG.fusionBackend}/api/videos`, { cache: 'no-store' });
         const data = await res.json();
         const videos = data.videos || [];
 
-        hint.textContent = `${videos.length} file${videos.length !== 1 ? 's' : ''} found in data/videos/`;
+        if (hint) hint.textContent = `${videos.length} file${videos.length !== 1 ? 's' : ''} in data/videos/`;
 
         if (videos.length === 0) {
-          sel.innerHTML = '<option value="">No video files found in data/videos/</option>';
+          sel.innerHTML = '<option value="">No video files found</option>';
           return;
         }
 
         sel.innerHTML = videos.map(v => {
-          const tick = v.active ? '  ✓ ACTIVE' : '';
-          return `<option value="${v.path}" data-size="${v.size_mb}" ${v.active ? 'selected' : ''}>${v.name}${tick}  (${v.size_mb} MB)</option>`;
+          const tick = v.active ? ' ✓ ACTIVE' : '';
+          return `<option value="${v.path}" data-size="${v.size_mb}" ${v.active ? 'selected' : ''}>${v.name}${tick}</option>`;
         }).join('');
 
-        sel.disabled = false;
-        setBtn.disabled = false;
-
-        // Update info badge for initial selection
+        // Prime the info badge and selected path from current active
         const activeOpt = [...sel.options].find(o => o.selected) || sel.options[0];
-        if (activeOpt) updateInfoBadge(activeOpt);
+        if (activeOpt) {
+          sel.value = activeOpt.value;
+          selectedVideoPath = activeOpt.value;
+          updateInfoBadge(activeOpt);
+          setBtn.disabled = false;
 
-        // Show current active video in status line
-        if (data.current) {
-          const name = data.current.split(/[\\/]/).pop();
-          setStatusLine(`Active video: ${name}`, 'ok');
+          const statusLine = document.getElementById('videoStatusLine');
+          if (data.current) {
+            const name = data.current.split(/[\\/]/).pop();
+            statusLine.textContent = `Active video: ${name}`;
+            statusLine.className = 'video-status-line ok';
+            videoApplied = true;
+          }
         }
 
       } catch (err) {
-        hint.textContent = 'Could not reach Fusion backend';
-        sel.innerHTML = '<option value="">Error loading video list</option>';
+        if (hint) hint.textContent = 'Fusion backend not reachable';
+        sel.innerHTML = '<option value="">—</option>';
       }
     }
 
     function updateInfoBadge(option) {
+      const sizeTxt = document.getElementById('videoSizeTxt');
       const mb = option?.dataset?.size;
-      document.getElementById('videoSizeTxt').textContent = mb ? `${mb} MB` : '— MB';
+      if (sizeTxt) sizeTxt.textContent = mb ? `${mb} MB` : '— MB';
     }
 
-    function setStatusLine(msg, cls = '') {
-      const el = document.getElementById('videoStatusLine');
-      el.textContent = msg;
-      el.className = 'video-status-line' + (cls ? ' ' + cls : '');
-    }
-
-    // Sync info badge when user picks a different video
     document.addEventListener('DOMContentLoaded', () => {
-      document.getElementById('videoFileSelect').addEventListener('change', function() {
-        updateInfoBadge(this.options[this.selectedIndex]);
-        setStatusLine('Click ⚙ SET VIDEO to apply this selection.');
+      const sel = document.getElementById('videoFileSelect');
+      if (sel) sel.addEventListener('change', () => {
+        const opt = sel.options[sel.selectedIndex];
+        selectedVideoPath = opt.value;
+        updateInfoBadge(opt);
+        videoApplied = false;
+        const statusLine = document.getElementById('videoStatusLine');
+        if (statusLine) {
+          statusLine.textContent = 'Click SET VIDEO to apply this selection.';
+          statusLine.className = 'video-status-line';
+        }
       });
     });
 
     async function applyVideoSelection() {
       const sel    = document.getElementById('videoFileSelect');
       const setBtn = document.getElementById('btnSetVideo');
-      if (!sel.value) { showToast('No video selected'); return; }
+      const statusLine = document.getElementById('videoStatusLine');
+      if (!sel || !sel.value) { showToast('No video selected'); return; }
 
       const path = sel.value;
       const name = path.split(/[\\/]/).pop();
-
       setBtn.disabled = true;
-      setStatusLine(`Applying ${name}…`);
+      if (statusLine) { statusLine.textContent = `Applying ${name}…`; statusLine.className = 'video-status-line'; }
 
       try {
         const res  = await fetch(`${CONFIG.fusionBackend}/api/video/select`, {
@@ -795,22 +802,28 @@
         const data = await res.json();
 
         if (data.success) {
+          videoApplied = true;
+          selectedVideoPath = path;
           showToast(`✓ Video set: ${data.selected}`);
-          setStatusLine(`✓ Active: ${data.selected}`, 'ok');
-          await loadVideoList(); // refresh ✓ ACTIVE markers
+          if (statusLine) {
+            statusLine.textContent = `✓ Active: ${data.selected}`;
+            statusLine.className = 'video-status-line ok';
+          }
+          // Refresh dropdown to update ✓ ACTIVE markers
+          await loadVideoList();
         } else {
           showToast(`Error: ${data.error}`);
-          setStatusLine(`Error: ${data.error}`, 'err');
+          if (statusLine) { statusLine.textContent = `Error: ${data.error}`; statusLine.className = 'video-status-line err'; }
         }
       } catch (err) {
         showToast('Could not reach Fusion backend');
-        setStatusLine('Error: Fusion backend not reachable', 'err');
+        if (statusLine) { statusLine.textContent = 'Error: Fusion backend not reachable'; statusLine.className = 'video-status-line err'; }
       } finally {
         setBtn.disabled = false;
       }
     }
 
-    // ── Navigation ──
+    // ── Mode handlers ──
     function selectMode(mode) {
       if (!aisReady) { showToast('AIS backend is not yet online. Please wait.'); return; }
       fetch(`${CONFIG.aisBackend}/api/mode`, {

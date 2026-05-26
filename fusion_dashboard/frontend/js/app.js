@@ -1,6 +1,6 @@
 // Enterprise Maritime Intelligence System - Enhanced
 
-const ws = new WebSocket("ws://localhost:8000/ws");
+const ws = new WebSocket(`ws://${window.location.host}/ws`);
 
 let map, mapLoaded = false, selectedShip = null, latestShips = [];
 let sessionStartTime = null, renderScheduled = false;
@@ -32,8 +32,6 @@ let showPredicted = true;
 let showArrows = true;
 let showHeatmap = false;
 let showPorts = false;
-let showRain = false;
-let rainLayerAdded = false;
 
 function getShipKey(ship) {
   if (!ship) return null;
@@ -164,14 +162,6 @@ function setupCheckboxes() {
       if (map && map.getLayer('ports-layer')) {
         map.setLayoutProperty('ports-layer', 'visibility', showPorts ? 'visible' : 'none');
       }
-    });
-  }
-
-  const rainCheckbox = document.getElementById('showRain');
-  if (rainCheckbox) {
-    rainCheckbox.addEventListener('change', (e) => {
-      showRain = e.target.checked;
-      toggleRainOverlay(showRain);
     });
   }
 }
@@ -327,54 +317,6 @@ function initializeLayers() {
   }
 }
 
-async function toggleRainOverlay(show) {
-  if (!map || !mapLoaded) return;
-  
-  if (!show) {
-    if (map.getLayer('rain-layer')) {
-      map.setLayoutProperty('rain-layer', 'visibility', 'none');
-    }
-    return;
-  }
-  
-  if (rainLayerAdded) {
-    if (map.getLayer('rain-layer')) {
-      map.setLayoutProperty('rain-layer', 'visibility', 'visible');
-    }
-    return;
-  }
-  
-  try {
-    const res = await fetch("https://api.rainviewer.com/public/weather-maps.json");
-    const data = await res.json();
-    const latestFrame = data.radar.past[data.radar.past.length - 1];
-    
-    const tileUrl = `${data.host}${latestFrame.path}/256/{z}/{x}/{y}/2/1_1.png`;
-    
-    map.addSource('rainviewer', {
-      type: 'raster',
-      tiles: [tileUrl],
-      tileSize: 256
-    });
-    
-    map.addLayer({
-      id: 'rain-layer',
-      type: 'raster',
-      source: 'rainviewer',
-      paint: {
-        'raster-opacity': 0.5
-      },
-      layout: {
-        'visibility': 'visible'
-      }
-    }, 'ships-layer'); // add below ships layer
-    
-    rainLayerAdded = true;
-  } catch (err) {
-    console.error("Error loading RainViewer overlay:", err);
-  }
-}
-
 function setupMapClickHandler() {
   map.on("click", (e) => {
     if (measurementMode) {
@@ -438,14 +380,42 @@ ws.onopen = () => {
       if (map && mapLoaded) map.flyTo({ center: [lon, lat], zoom: 9 });
       showToast('AIS tracking started — Singapore Strait');
     }
+
+    }
   }, 1200);
 };
+
+// Auto-activate split view when page loads in hybrid/live mode
+// Uses 'load' event so inline scripts (setViewMode) are guaranteed to be defined
+window.addEventListener('load', () => {
+  const urlMode = new URLSearchParams(window.location.search).get('mode');
+  if (urlMode === 'hybrid' || urlMode === 'live') {
+    // Give inline scripts a tick to register, then activate split pane
+    setTimeout(() => { if (typeof setViewMode === 'function') setViewMode(urlMode); }, 400);
+  }
+});
 ws.onmessage = (event) => {
   const message = JSON.parse(event.data);
   const normalizedShips = normalizeWsMessage(message);
   if (normalizedShips) {
     latestShips = normalizedShips;
   }
+  
+  if (message.video_frame) {
+    const videoFrame = document.getElementById('videoFrame');
+    if (videoFrame) {
+      videoFrame.src = 'data:image/jpeg;base64,' + message.video_frame;
+      videoFrame.style.display = 'block';
+      // Hide placeholder, show live dot
+      const placeholder = document.getElementById('videoPlaceholder');
+      if (placeholder) placeholder.style.display = 'none';
+      const statusDot  = document.getElementById('videoPanelStatusDot');
+      const statusText = document.getElementById('videoPanelStatusText');
+      if (statusDot)  { statusDot.classList.add('live'); }
+      if (statusText) { statusText.textContent = 'LIVE'; }
+    }
+  }
+
   scheduleRender();
   updateAnalytics();
   checkAlerts();
@@ -1211,4 +1181,7 @@ setTimeout(() => {
 
     viewModeButtons.parentNode.insertBefore(switcher, viewModeButtons);
   }
+  
+  // Sync the mode with the backend on startup
+  switchMode(currentMode);
 }, 500);

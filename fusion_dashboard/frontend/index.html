@@ -257,64 +257,216 @@
       cursor: not-allowed;
     }
 
-    /* ─────────────── VIDEO WINDOW ─────────────── */
+    /* ─────────────── SPLIT PANE (Hybrid / Live view) ─────────────── */
 
-    .video-window {
-      position: absolute;
-      bottom: 20px;
-      right: 20px;
-      width: 400px;
-      height: 300px;
-      background: var(--bg-0);
-      border: 2px solid var(--primary);
-      border-radius: 8px;
-      overflow: hidden;
-      box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
-      z-index: 100;
+    /* When split is active, map-area becomes a flex row */
+    .map-area.split-active {
+      display: flex;
+      flex-direction: row;
+    }
+
+    /* Map fills remaining space in split */
+    .map-area.split-active #map {
+      flex: 1;
+      min-width: 0;
+    }
+
+    /* Video pane — hidden by default, shown in Live/Hybrid view */
+    .video-pane {
       display: none;
+      width: 50%;
+      flex-shrink: 0;
       flex-direction: column;
-      touch-action: none;
-      cursor: move;
+      background: #0a0a0a;
+      border-left: 2px solid var(--primary);
+      overflow: hidden;
+      position: relative;
     }
 
-    body.dark-mode .video-window {
-      background: var(--bg-dark-1);
-      border-color: var(--primary-light);
+    .map-area.split-active .video-pane {
+      display: flex;
     }
 
-    .video-header {
-      background: var(--primary);
+    body.dark-mode .video-pane {
+      border-left-color: var(--primary-light);
+    }
+
+    .video-pane-header {
+      background: linear-gradient(90deg, var(--primary-dark), var(--primary));
       color: white;
-      padding: 8px 12px;
+      padding: 9px 14px;
       font-size: 12px;
-      font-weight: 600;
+      font-weight: 700;
       display: flex;
       justify-content: space-between;
       align-items: center;
-      cursor: grab;
-      user-select: none;
+      flex-shrink: 0;
+      text-transform: uppercase;
+      letter-spacing: 0.6px;
     }
 
-    .video-header:active {
-      cursor: grabbing;
+    .video-pane-status {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 11px;
+      font-weight: 500;
+      text-transform: none;
+      letter-spacing: 0;
     }
 
-    .video-close {
-      background: none;
-      border: none;
-      color: white;
-      font-size: 20px;
-      cursor: pointer;
-      padding: 0 4px;
-      line-height: 1;
+    .video-status-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: #9ca3af;
     }
 
-    .video-canvas {
+    .video-status-dot.live {
+      background: #10b981;
+      box-shadow: 0 0 6px rgba(16, 185, 129, 0.7);
+      animation: pulse 1.5s infinite;
+    }
+
+    .video-pane-body {
       flex: 1;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      overflow: hidden;
+      background: #000;
+      position: relative;
+    }
+
+    #videoFrame {
       width: 100%;
       height: 100%;
       object-fit: contain;
-      background: #000;
+      display: block;
+    }
+
+    .video-placeholder {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 12px;
+      color: #555;
+      position: absolute;
+      top: 0; left: 0; right: 0; bottom: 0;
+    }
+
+    .video-placeholder svg {
+      opacity: 0.4;
+    }
+
+    .video-placeholder p {
+      font-size: 13px;
+      text-align: center;
+    }
+
+    /* legacy hidden floating window (keep for compat) */
+    .video-window { display: none !important; }
+
+    /* ─────────────── VIDEO SELECTOR ─────────────── */
+
+    .video-selector-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 6px 14px;
+      background: rgba(0,0,0,0.35);
+      border-bottom: 1px solid rgba(255,255,255,0.08);
+      flex-shrink: 0;
+    }
+
+    .video-selector-label {
+      font-size: 10px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.6px;
+      color: rgba(255,255,255,0.5);
+      white-space: nowrap;
+    }
+
+    #videoSelect {
+      flex: 1;
+      background: rgba(255,255,255,0.07);
+      border: 1px solid rgba(255,255,255,0.15);
+      border-radius: 5px;
+      color: #e5e7eb;
+      font-size: 12px;
+      padding: 5px 8px;
+      cursor: pointer;
+      outline: none;
+      min-width: 0;
+      font-family: inherit;
+      transition: border-color 0.2s;
+    }
+
+    #videoSelect:hover,
+    #videoSelect:focus {
+      border-color: rgba(59,130,246,0.7);
+    }
+
+    #videoSelect option {
+      background: #1e293b;
+      color: #e5e7eb;
+    }
+
+    .video-switch-btn {
+      background: rgba(59,130,246,0.8);
+      border: none;
+      border-radius: 5px;
+      color: white;
+      font-size: 11px;
+      font-weight: 700;
+      padding: 5px 10px;
+      cursor: pointer;
+      white-space: nowrap;
+      transition: background 0.2s;
+      text-transform: uppercase;
+      letter-spacing: 0.4px;
+    }
+
+    .video-switch-btn:hover {
+      background: rgba(37,99,235,0.9);
+    }
+
+    .video-switch-btn:disabled {
+      opacity: 0.5;
+      cursor: wait;
+    }
+
+    /* Switching overlay */
+    .video-switching-overlay {
+      position: absolute;
+      inset: 0;
+      background: rgba(0,0,0,0.75);
+      display: none;
+      align-items: center;
+      justify-content: center;
+      flex-direction: column;
+      gap: 14px;
+      z-index: 10;
+      color: white;
+      font-size: 13px;
+    }
+
+    .video-switching-overlay.active {
+      display: flex;
+    }
+
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+    .spinner {
+      width: 32px;
+      height: 32px;
+      border: 3px solid rgba(255,255,255,0.2);
+      border-top-color: #3b82f6;
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
     }
 
     /* ─────────────── MAP AREA ─────────────── */
@@ -1100,7 +1252,12 @@
           <div class="stat-value" id="headerCoverage">1.0°</div>
         </div>
       </div>
-
+      <div class="view-mode-buttons">
+        <div class="camera-status" id="cameraStatus"></div>
+        <button class="view-mode-btn active" id="btnViewAIS" onclick="setViewMode('ais')">Map</button>
+        <button class="view-mode-btn" id="btnViewLive" onclick="setViewMode('live')">Live Feed</button>
+        <button class="view-mode-btn" id="btnViewHybrid" onclick="setViewMode('hybrid')">Hybrid</button>
+      </div>
       <div class="mode-switcher">
         <button class="mode-btn active" id="btnModeAIS" onclick="switchMode('ais-only')">AIS-Only</button>
         <button class="mode-btn" id="btnModeHybrid" onclick="switchMode('hybrid')">Hybrid</button>
@@ -1147,36 +1304,31 @@
           <!-- FILTERS SECTION -->
           <div class="section">
             <div class="section-title">Display Filters</div>
-            <label class="filter-item">
+            <div class="filter-item">
               <input type="checkbox" id="showTracks" checked>
               <div class="checkbox-custom">✓</div>
               <span>Tracks</span>
-            </label>
-            <label class="filter-item">
+            </div>
+            <div class="filter-item">
               <input type="checkbox" id="showPredicted" checked>
               <div class="checkbox-custom">✓</div>
               <span>Predicted Routes</span>
-            </label>
-            <label class="filter-item">
+            </div>
+            <div class="filter-item">
               <input type="checkbox" id="showArrows" checked>
               <div class="checkbox-custom">✓</div>
               <span>Direction Arrows</span>
-            </label>
-            <label class="filter-item">
+            </div>
+            <div class="filter-item">
               <input type="checkbox" id="showHeatmap">
               <div class="checkbox-custom"></div>
               <span>Density Heatmap</span>
-            </label>
-            <label class="filter-item">
+            </div>
+            <div class="filter-item">
               <input type="checkbox" id="showPorts">
               <div class="checkbox-custom"></div>
               <span>Nearby Ports</span>
-            </label>
-            <label class="filter-item">
-              <input type="checkbox" id="showRain">
-              <div class="checkbox-custom"></div>
-              <span>Rain Overlay</span>
-            </label>
+            </div>
           </div>
 
           <!-- TOOLS -->
@@ -1203,6 +1355,46 @@
       <!-- MAP & VIDEO AREA -->
       <div class="map-area" id="mapArea">
         <div id="map"></div>
+
+        <!-- Split-pane video panel (shown in Live/Hybrid view) -->
+        <div class="video-pane" id="videoPane">
+          <div class="video-pane-header">
+            <span>📷 Live Camera Feed</span>
+            <div class="video-pane-status">
+              <div class="video-status-dot" id="videoPanelStatusDot"></div>
+              <span id="videoPanelStatusText">Waiting…</span>
+            </div>
+          </div>
+
+          <!-- Video file selector bar -->
+          <div class="video-selector-row">
+            <span class="video-selector-label">Video</span>
+            <select id="videoSelect" title="Select a video file to process">
+              <option value="">Loading videos…</option>
+            </select>
+            <button class="video-switch-btn" id="videoSwitchBtn" onclick="switchVideo()" title="Load selected video">
+              ▶ Load
+            </button>
+          </div>
+
+          <div class="video-pane-body">
+            <!-- Switching overlay -->
+            <div class="video-switching-overlay" id="videoSwitchingOverlay">
+              <div class="spinner"></div>
+              <span id="videoSwitchingLabel">Switching video…</span>
+            </div>
+            <!-- Placeholder shown while no frame is received -->
+            <div class="video-placeholder" id="videoPlaceholder">
+              <svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="#666" stroke-width="1.5">
+                <rect x="2" y="6" width="20" height="14" rx="2"/>
+                <path d="M16 2l4 4-4 4"/>
+                <circle cx="9" cy="13" r="2"/>
+              </svg>
+              <p>Select a video above and click ▶ Load<br><small>Or wait for frames if hybrid mode is already running.</small></p>
+            </div>
+            <img id="videoFrame" alt="" style="display:none;">
+          </div>
+        </div>
 
         <div class="map-overlay">
           <div class="overlay-title">Legend</div>
@@ -1430,9 +1622,9 @@
     // ─────────────────────────────────────────────
 
     const MODE_CONFIG = {
-      currentMode: new URLSearchParams(window.location.search).get('mode') || 'ais-only',
+      currentMode: new URLSearchParams(window.location.search).get('mode') || 'hybrid',
       backends: {
-        ais: 'http://localhost:8000',
+        ais: window.location.origin,
         marvis: 'http://localhost:5000'
       }
     };
@@ -1478,39 +1670,31 @@
 
     function setViewMode(viewMode) {
       const mode = MODE_CONFIG.currentMode;
-      const btnViewAIS = document.getElementById('btnViewAIS');
-      const btnViewLive = document.getElementById('btnViewLive');
+      const btnViewAIS   = document.getElementById('btnViewAIS');
+      const btnViewLive  = document.getElementById('btnViewLive');
       const btnViewHybrid = document.getElementById('btnViewHybrid');
-      const videoWindow = document.getElementById('videoWindow');
+      const mapArea      = document.getElementById('mapArea');
 
       [btnViewAIS, btnViewLive, btnViewHybrid].forEach(btn => btn && btn.classList.remove('active'));
 
-      if (mode === 'ais-only') {
+      const showVideo = (viewMode === 'live' || viewMode === 'hybrid') && mode !== 'ais-only';
+
+      if (showVideo) {
+        mapArea && mapArea.classList.add('split-active');
+        if (viewMode === 'live'   && btnViewLive)   btnViewLive.classList.add('active');
+        if (viewMode === 'hybrid' && btnViewHybrid) btnViewHybrid.classList.add('active');
+      } else {
+        mapArea && mapArea.classList.remove('split-active');
         if (btnViewAIS) btnViewAIS.classList.add('active');
-        if (videoWindow) videoWindow.style.display = 'none';
-        return;
       }
 
-      if (viewMode === 'ais') {
-        if (btnViewAIS) btnViewAIS.classList.add('active');
-        if (videoWindow) videoWindow.style.display = 'none';
-      } else {
-        if (viewMode === 'live' && btnViewLive) btnViewLive.classList.add('active');
-        if (viewMode === 'hybrid' && btnViewHybrid) btnViewHybrid.classList.add('active');
-        if (videoWindow) videoWindow.style.display = '';
-      }
+      // Trigger a map resize so MapLibre fills the new width
+      setTimeout(() => { if (typeof map !== 'undefined' && map && map.resize) map.resize(); }, 50);
     }
 
     function closeVideoWindow() {
-      const videoWindow = document.getElementById('videoWindow');
-      const btnViewAIS = document.getElementById('btnViewAIS');
-      const btnViewLive = document.getElementById('btnViewLive');
-      const btnViewHybrid = document.getElementById('btnViewHybrid');
-
-      if (videoWindow) videoWindow.style.display = 'none';
-      if (btnViewAIS) btnViewAIS.classList.add('active');
-      if (btnViewLive) btnViewLive.classList.remove('active');
-      if (btnViewHybrid) btnViewHybrid.classList.remove('active');
+      // Legacy stub — now just switch back to AIS (map-only) view
+      setViewMode('ais');
     }
 
     function switchMode(newMode) {
@@ -1554,6 +1738,91 @@
     // Keyboard shortcut to open hub (Press 'H')
     document.addEventListener('keydown', (e) => {
       if (e.key === 'h' || e.key === 'H') goToHub();
+    });
+
+    // ─────────────────────────────────────────────
+    // VIDEO LIBRARY FUNCTIONS
+    // ─────────────────────────────────────────────
+
+    async function loadVideoList() {
+      const sel = document.getElementById('videoSelect');
+      if (!sel) return;
+      try {
+        const res  = await fetch('/api/videos');
+        const data = await res.json();
+        const videos = data.videos || [];
+
+        if (videos.length === 0) {
+          sel.innerHTML = '<option value="">No videos found in data/videos/</option>';
+          return;
+        }
+
+        sel.innerHTML = videos.map(v => {
+          const label = `${v.name}  (${v.size_mb} MB)`;
+          const active = v.active ? ' ✓' : '';
+          return `<option value="${v.path}" ${v.active ? 'selected' : ''}>${label}${active}</option>`;
+        }).join('');
+
+      } catch (err) {
+        console.warn('Could not load video list:', err);
+        sel.innerHTML = '<option value="">Backend not reachable</option>';
+      }
+    }
+
+    async function switchVideo() {
+      const sel  = document.getElementById('videoSelect');
+      const btn  = document.getElementById('videoSwitchBtn');
+      const overlay = document.getElementById('videoSwitchingOverlay');
+      const label   = document.getElementById('videoSwitchingLabel');
+      const frame   = document.getElementById('videoFrame');
+      const placeholder = document.getElementById('videoPlaceholder');
+      const statusDot   = document.getElementById('videoPanelStatusDot');
+      const statusText  = document.getElementById('videoPanelStatusText');
+
+      if (!sel || !sel.value) { showToast('Select a video first'); return; }
+
+      const selectedPath = sel.value;
+      const selectedName = sel.options[sel.selectedIndex]?.text?.split('  ')[0] || selectedPath;
+
+      // Show loading state
+      if (btn) btn.disabled = true;
+      if (overlay) { overlay.classList.add('active'); }
+      if (label)   { label.textContent = `Loading ${selectedName}…`; }
+      if (frame)   { frame.style.display = 'none'; frame.src = ''; }
+      if (placeholder) { placeholder.style.display = 'flex'; }
+      if (statusDot)   { statusDot.classList.remove('live'); }
+      if (statusText)  { statusText.textContent = 'Switching…'; }
+
+      try {
+        const res  = await fetch('/api/video/select', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ path: selectedPath })
+        });
+        const data = await res.json();
+
+        if (data.success) {
+          showToast(`▶ ${data.selected}`);
+          if (statusText) statusText.textContent = 'Waiting for frames…';
+          // Refresh the dropdown so the ✓ marks the new active video
+          await loadVideoList();
+        } else {
+          showToast(`Error: ${data.error}`);
+          if (statusText) statusText.textContent = 'Error';
+        }
+      } catch (err) {
+        console.error('Video select error:', err);
+        showToast('Could not reach backend');
+        if (statusText) statusText.textContent = 'Error';
+      } finally {
+        if (btn) btn.disabled = false;
+        if (overlay) overlay.classList.remove('active');
+      }
+    }
+
+    // Load video list when page finishes loading
+    window.addEventListener('load', () => {
+      loadVideoList();
     });
   </script>
 

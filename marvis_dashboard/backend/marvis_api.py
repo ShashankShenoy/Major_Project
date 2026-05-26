@@ -36,6 +36,7 @@ CLASSES      = [8]                                      # COCO class 8 = boat
 INITIAL_BUFFER_SECONDS = 30
 UPDATE_INTERVAL_SECONDS = 30
 DISPLAY_UPDATE_SECONDS  = float(os.getenv("DISPLAY_UPDATE_SECONDS", "1.0"))
+PREDICTION_UPDATE_INTERVAL = 2  # Compute LSTM predictions every 2 seconds (not 30!)
 
 # LSTM path
 sys.path.insert(0, str(Path(__file__).parent.parent.parent / "ais_dashboard" / "backend"))
@@ -215,10 +216,10 @@ def process_video_with_detection():
         print(f"   FPS: {fps:.1f}, Total frames: {total_frames}")
 
         buffer_frames       = min(int(fps * INITIAL_BUFFER_SECONDS), max(total_frames - 1, 1))
-        update_frame_interval = int(fps * UPDATE_INTERVAL_SECONDS)
+        update_frame_interval = int(fps * PREDICTION_UPDATE_INTERVAL)  # Use faster interval for predictions
 
         print(f"   Buffer phase : {buffer_frames} frames (~{INITIAL_BUFFER_SECONDS}s)")
-        print(f"   Update every : {update_frame_interval} frames (~{UPDATE_INTERVAL_SECONDS}s)\n")
+        print(f"   Predict every: {update_frame_interval} frames (~{PREDICTION_UPDATE_INTERVAL}s)\n")
 
         frame_count  = 0
         start_time   = time.time()
@@ -290,6 +291,7 @@ def process_video_with_detection():
 
                         # â”€â”€ LSTM / kinematic prediction â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
                         if buffer_complete and frame_count % update_frame_interval == 0:
+                            # Compute LSTM prediction every PREDICTION_UPDATE_INTERVAL
                             if lstm_engine:
                                 try:
                                     lstm_engine.update(str(sid), cx, cy)
@@ -299,6 +301,9 @@ def process_video_with_detection():
                                     persistent_predictions[sid] = predict_kinematic(smoothed)
                             else:
                                 persistent_predictions[sid] = predict_kinematic(smoothed)
+                        elif buffer_complete and sid not in persistent_predictions:
+                            # If buffer complete but we haven't computed predictions yet, use kinematic
+                            persistent_predictions[sid] = predict_kinematic(smoothed)
                         elif not buffer_complete:
                             persistent_predictions[sid] = []
 
