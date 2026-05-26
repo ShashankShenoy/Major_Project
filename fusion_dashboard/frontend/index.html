@@ -950,6 +950,14 @@
       box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
     }
 
+    /* When split view is active (video pane shown), move legend below the video selector */
+    .map-area.split-active .map-overlay {
+      top: auto;
+      bottom: 20px;
+      right: 20px;
+      z-index: 50;
+    }
+
     body.dark-mode .map-overlay {
       background: rgba(17, 24, 39, 0.95);
       border-color: var(--border-dark);
@@ -1622,14 +1630,16 @@
     // ─────────────────────────────────────────────
 
     const MODE_CONFIG = {
-      currentMode: new URLSearchParams(window.location.search).get('mode') || 'hybrid',
+      // Read mode from localStorage (persisted), default to 'ais-only' (safe default)
+      // URL parameter is only for informational purposes, doesn't trigger mode switch
+      currentMode: localStorage.getItem('selectedMode') || 'ais-only',
       backends: {
         ais: window.location.origin,
         marvis: 'http://localhost:5000'
       }
     };
 
-    // Initialize mode display on page load
+    // Initialize mode display on page load - do NOT automatically switch modes
     window.addEventListener('load', () => {
       updateModeDisplay();
       configureViewButtons();
@@ -1698,11 +1708,18 @@
     }
 
     function switchMode(newMode) {
-      console.log(`🔄 Switching to ${newMode} mode...`);
+      // Prevent switching to already-active mode
+      if (MODE_CONFIG.currentMode === newMode) {
+        console.log(`Already in ${newMode} mode`);
+        updateModeDisplay();
+        return;
+      }
+
+      console.log(`🔄 Switching from ${MODE_CONFIG.currentMode} to ${newMode} mode...`);
       MODE_CONFIG.currentMode = newMode;
       localStorage.setItem('selectedMode', newMode);
 
-      // Call mode API to switch backend
+      // Call mode API to switch backend (without page redirect)
       const apiUrl = `${MODE_CONFIG.backends.ais}/api/mode`;
       fetch(apiUrl, {
         method: 'POST',
@@ -1712,19 +1729,12 @@
       .then(r => r.json())
       .then(data => {
         console.log('Mode switch response:', data);
-        // Update button states and navigate
         updateModeDisplay();
-        setTimeout(() => {
-          window.location.href = `${MODE_CONFIG.backends.ais}/dashboard?mode=${newMode}`;
-        }, 300);
+        configureViewButtons();
       })
       .catch(e => {
         console.error('Mode switch error:', e);
-        // Still update UI even if API call fails
         updateModeDisplay();
-        setTimeout(() => {
-          window.location.href = `${MODE_CONFIG.backends.ais}/dashboard?mode=${newMode}`;
-        }, 200);
       });
     }
 
@@ -1820,8 +1830,33 @@
       }
     }
 
-    // Load video list when page finishes loading
-    window.addEventListener('load', () => {
+    // Initialize backend mode and load video list on page load
+    async function initializeBackendMode() {
+      const urlMode = new URLSearchParams(window.location.search).get('mode') || 'hybrid';
+      
+      // Only proceed if mode is hybrid (video processing requires backend initialization)
+      if (urlMode === 'hybrid') {
+        try {
+          console.log(`📡 Initializing backend to ${urlMode} mode...`);
+          const apiUrl = `${MODE_CONFIG.backends.ais}/api/mode`;
+          const response = await fetch(apiUrl, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ mode: urlMode })
+          });
+          const data = await response.json();
+          console.log(`✅ Backend mode initialized:`, data);
+          return data.success;
+        } catch (err) {
+          console.warn(`⚠️  Failed to initialize backend mode: ${err}`);
+          return false;
+        }
+      }
+      return true;
+    }
+
+    window.addEventListener('load', async () => {
+      await initializeBackendMode();
       loadVideoList();
     });
   </script>

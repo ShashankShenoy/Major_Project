@@ -380,19 +380,14 @@ ws.onopen = () => {
       if (map && mapLoaded) map.flyTo({ center: [lon, lat], zoom: 9 });
       showToast('AIS tracking started — Singapore Strait');
     }
-
-    }
   }, 1200);
 };
 
 // Auto-activate split view when page loads in hybrid/live mode
 // Uses 'load' event so inline scripts (setViewMode) are guaranteed to be defined
 window.addEventListener('load', () => {
-  const urlMode = new URLSearchParams(window.location.search).get('mode');
-  if (urlMode === 'hybrid' || urlMode === 'live') {
-    // Give inline scripts a tick to register, then activate split pane
-    setTimeout(() => { if (typeof setViewMode === 'function') setViewMode(urlMode); }, 400);
-  }
+  // Do NOT automatically activate view mode - let user choose
+  // The URL parameter is informational only, doesn't trigger automatic actions
 });
 ws.onmessage = (event) => {
   const message = JSON.parse(event.data);

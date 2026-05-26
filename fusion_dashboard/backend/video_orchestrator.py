@@ -189,19 +189,6 @@ class VideoOrchestrator:
 
             print(f"   FPS: {fps}, Total frames: {total_frames}")
 
-            # Initialize video processor if available
-            if VideoProcessor is not None:
-                try:
-                    self.video_processor = VideoProcessor(
-                        yolo_model="yolov8m",
-                        device=self.device,
-                        conf=self.config.confidence_threshold
-                    )
-                    print("✅ VideoProcessor initialized")
-                except Exception as e:
-                    print(f"⚠️  VideoProcessor init failed: {e}")
-                    self.video_processor = None
-
             frame_count = 0
             tracked_ships = {}  # Track ships across frames
 
@@ -236,8 +223,8 @@ class VideoOrchestrator:
                     fps = frame_count / elapsed
                     print(f"   Frame {frame_count}/{total_frames} ({fps:.1f} fps)")
 
-                # Deeply throttle processing to 1 frame every 5 seconds to minimize CPU load
-                await asyncio.sleep(5.0)
+                # Light throttle to match WebSocket broadcast rate (2 Hz)
+                await asyncio.sleep(0.1)
 
             cap.release()
 
@@ -279,8 +266,9 @@ class VideoOrchestrator:
         self.camera_status.available = len(detections) > 0
         self.camera_status.timestamp = time.time()
         
+        # Encode video frame every 500ms (matching 2 Hz WebSocket rate)
         current_time = time.time()
-        if current_time - self.last_video_update >= 5.0:
+        if current_time - self.last_video_update >= 0.5:
             ok, encoded = cv2.imencode(".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, 80])
             if ok:
                 video_frame_b64 = base64.b64encode(encoded).decode("utf-8")
