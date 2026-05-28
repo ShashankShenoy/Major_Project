@@ -42,9 +42,13 @@ function initWebSocket() {
           
           data.ships.forEach(ship => {
             if (ship.source === "CAMERA") {
+              // Populate gps array so it gets rendered by the map
+              if (ship.gps_lat !== undefined && ship.gps_lon !== undefined) {
+                ship.gps = [ship.gps_lon, ship.gps_lat];
+              }
               cvShips[ship.id] = ship;
               if (ship.is_matched_to_ais && ship.matched_ais_mmsi) {
-                matchedShips.add(ship.matched_ais_mmsi);
+                matchedShips.add(String(ship.matched_ais_mmsi));
               }
             } else if (ship.source === "AIS") {
               aisShips[ship.mmsi || ship.id] = ship;
@@ -140,6 +144,19 @@ function initMap() {
         data: { type: 'FeatureCollection', features: [] }
       });
       
+      // Add collision zones layer (underneath ships so it doesn't hide their outlines)
+      map.addLayer({
+        id: 'collision-zones',
+        type: 'circle',
+        source: 'collision-zones',
+        paint: {
+          "circle-radius": 12,
+          "circle-color": "#dc2626",
+          "circle-opacity": 0.4,
+          "circle-stroke-width": 0
+        }
+      });
+      
       // Add AIS ships layer
       map.addLayer({
         id: 'ais-ships-layer',
@@ -153,12 +170,6 @@ function initMap() {
             6.5
           ],
           'circle-color': '#22c55e', // Green for ALL ships
-          'circle-stroke-width': [
-            'case',
-            ['boolean', ['feature-state', 'selected'], false],
-            3,
-            2
-          ],
           'circle-stroke-width': 2,
           'circle-stroke-color': [
             'case',
@@ -182,27 +193,13 @@ function initMap() {
         }
       });
       
-      // Add collision zones layer
-      map.addLayer({
-        id: "collision-layer",
-        type: "circle",
-        source: "collision-zones",
-        paint: {
-          "circle-radius": 8,
-          "circle-color": "#dc2626",
-          "circle-opacity": 0.4,
-          "circle-stroke-width": 2,
-          "circle-stroke-color": "#dc2626"
-        }
-      });
-      
       // Add LSTM predictions layer
       map.addLayer({
         id: 'lstm-layer',
         type: 'line',
         source: 'lstm-predictions',
         paint: {
-          'line-color': '#3b82f6',
+          'line-color': ['get', 'color'],
           'line-width': 2,
           'line-dasharray': [4, 4]
         }
@@ -260,7 +257,7 @@ function renderAllShips() {
           sog: s.sog,
           cog: s.cog,
           risk: hasRisk,
-          matched: matchedShips.has(s.mmsi || s.id)
+          matched: matchedShips.has(String(s.mmsi || s.id))
         }
       };
     });
@@ -289,15 +286,21 @@ function renderAllShips() {
   // Build LSTM prediction features (lines)
   const lstmFeatures = lstmPredictions
     .filter(pred => pred.path && pred.path.length > 1)
-    .map((pred, idx) => ({
-      type: 'Feature',
-      id: `lstm_${idx}`,
-      geometry: { 
-        type: 'LineString', 
-        coordinates: pred.path 
-      },
-      properties: { predicted: true }
-    }));
+    .map((pred, idx) => {
+      // Generate a unique color based on mmsi or id
+      const idStr = String(pred.mmsi || idx);
+      const hash = idStr.split('').reduce((a,b)=>{a=((a<<5)-a)+b.charCodeAt(0);return a&a},0);
+      const color = `hsl(${Math.abs(hash) % 360}, 80%, 60%)`;
+      return {
+        type: 'Feature',
+        id: `lstm_${idx}`,
+        geometry: { 
+          type: 'LineString', 
+          coordinates: pred.path 
+        },
+        properties: { predicted: true, color: color }
+      };
+    });
   
   // Update sources
   const aisSource = map.getSource('ais-ships');

@@ -57,28 +57,37 @@ class GPSConverter:
     """Convert pixel coordinates to GPS coordinates"""
 
     def __init__(self, camera_lat: float, camera_lon: float, fov_km: float,
-                 video_width: int = 1920, video_height: int = 1080):
+                 video_width: int = 1920, video_height: int = 1080, camera_heading: float = 180.0, fov_deg: float = 60.0):
         self.camera_lat = camera_lat
         self.camera_lon = camera_lon
         self.fov_km = fov_km
         self.video_width = video_width
         self.video_height = video_height
-        self.center_x = video_width / 2
-        self.center_y = video_height / 2
+        self.camera_heading = camera_heading
+        self.fov_deg = fov_deg
 
     def pixels_to_gps(self, px: float, py: float) -> Tuple[float, float]:
-        """Convert pixel coordinates to GPS [lat, lon]"""
-        # Normalize to [-1, 1]
-        norm_x = (px - self.center_x) / self.center_x
-        norm_y = (self.center_y - py) / self.center_y
+        """Convert pixel coordinates to GPS [lat, lon] using perspective projection"""
+        # Distance from camera based on vertical position (bottom=0, top=fov_km)
+        y_frac = (self.video_height - py) / self.video_height
+        # Exponentiate to simulate perspective (further away objects compress vertically)
+        distance_km = (y_frac ** 2) * self.fov_km
 
-        # Convert to lat/lon offset
-        lat_offset = norm_y * (self.fov_km / 111.0)
-        lon_offset = norm_x * (self.fov_km / (111.0 * cos(radians(self.camera_lat))))
+        # Angle offset based on horizontal position
+        x_frac = (px - (self.video_width / 2)) / (self.video_width / 2)
+        angle_offset_deg = x_frac * (self.fov_deg / 2)
+        
+        # Calculate actual heading to the ship
+        ship_heading = (self.camera_heading + angle_offset_deg) % 360
+        
+        # Calculate lat/lon offsets
+        from math import cos, sin, radians
+        lat_offset_km = distance_km * cos(radians(ship_heading))
+        lon_offset_km = distance_km * sin(radians(ship_heading))
 
         return (
-            self.camera_lat + lat_offset,
-            self.camera_lon + lon_offset
+            self.camera_lat + lat_offset_km / 111.0,
+            self.camera_lon + lon_offset_km / (111.0 * cos(radians(self.camera_lat)))
         )
 
 
@@ -341,8 +350,9 @@ class VideoOrchestrator:
                 if not hasattr(self, 'persistent_predictions'):
                     self.persistent_predictions = {}
                 
+                self.lstm_engine.update(ship_id, cx, cy)
+                
                 if frame_num % 50 == 0:
-                    self.lstm_engine.update(ship_id, cx, cy)
                     predicted_path_px, method = self.lstm_engine.predict(ship_id)
 
                     # Convert predicted path to GPS
@@ -355,7 +365,7 @@ class VideoOrchestrator:
                     if ship_id in self.persistent_predictions:
                         predicted_path_px, predicted_path_gps, method = self.persistent_predictions[ship_id]
                     else:
-                        predicted_path_px, predicted_path_gps, method = [], [], "NONE"
+                        predicted_path_px, predicted_path_gps, method = [], [], "NO_HISTORY"
                 
                 # Draw on frame
                 color = (0, 255, 0)

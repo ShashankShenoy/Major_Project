@@ -455,10 +455,10 @@ async def unified_broadcaster():
                             ais_ships_snapshot
                         )
 
-                        # Convert to payload format
                         for det in matched_detections:
                             if isinstance(det, ShipDetection):
-                                cv_payload.append(det.dict())
+                                # Use model_dump() for Pydantic v2 compatibility
+                                cv_payload.append(det.model_dump())
 
                 except asyncio.QueueEmpty:
                     pass  # No frame available
