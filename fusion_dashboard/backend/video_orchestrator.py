@@ -338,14 +338,24 @@ class VideoOrchestrator:
                 gps_lat, gps_lon = self.gps_converter.pixels_to_gps(cx, cy)
 
                 # Get LSTM prediction
-                self.lstm_engine.update(ship_id, cx, cy)
-                predicted_path_px, method = self.lstm_engine.predict(ship_id)
+                if not hasattr(self, 'persistent_predictions'):
+                    self.persistent_predictions = {}
+                
+                if frame_num % 50 == 0:
+                    self.lstm_engine.update(ship_id, cx, cy)
+                    predicted_path_px, method = self.lstm_engine.predict(ship_id)
 
-                # Convert predicted path to GPS
-                predicted_path_gps = [
-                    self.gps_converter.pixels_to_gps(px, py)
-                    for px, py in predicted_path_px
-                ]
+                    # Convert predicted path to GPS
+                    predicted_path_gps = [
+                        self.gps_converter.pixels_to_gps(px, py)
+                        for px, py in predicted_path_px
+                    ]
+                    self.persistent_predictions[ship_id] = (predicted_path_px, predicted_path_gps, method)
+                else:
+                    if ship_id in self.persistent_predictions:
+                        predicted_path_px, predicted_path_gps, method = self.persistent_predictions[ship_id]
+                    else:
+                        predicted_path_px, predicted_path_gps, method = [], [], "NONE"
                 
                 # Draw on frame
                 color = (0, 255, 0)
