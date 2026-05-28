@@ -89,7 +89,7 @@ video_orchestrator: VideoOrchestrator = None
 video_processing_task: asyncio.Task = None  # Track the video processing task
 
 # Current operating mode
-current_mode = "ais-only"
+current_mode = "hybrid"
 
 
 # ─────────────────────────────────────────────
@@ -520,8 +520,29 @@ async def lifespan(app: FastAPI):
     # Create queue for video frames
     video_frame_queue = asyncio.Queue(maxsize=100)
     
-    # Do NOT initialize the heavy models on startup. Wait until 'hybrid' mode is selected.
-    video_orchestrator = None
+    # Initialize heavy models on startup for fusion dashboard
+    global video_orchestrator, current_mode
+    if ENABLE_VIDEO_PROCESSING:
+        try:
+            config = VideoProcessingConfig(
+                video_path=VIDEO_PATH,
+                camera_lat=CAMERA_LAT,
+                camera_lon=CAMERA_LON,
+                fov_km=FOV_KM,
+                device=DEVICE,
+                confidence_threshold=CONFIDENCE_THRESHOLD,
+                cv_match_radius_deg=CV_MATCH_RADIUS_KM / 111.0
+            )
+            video_orchestrator = await create_video_orchestrator(config)
+            await video_orchestrator.initialize(video_frame_queue)
+            await start_video_processing()
+            print("✅ Video orchestrator initialized and processing started")
+        except Exception as e:
+            print(f"⚠️ Failed to initialize video orchestrator: {e}")
+            video_orchestrator = None
+            current_mode = "ais-only"
+    else:
+        video_orchestrator = None
 
     # Start background tasks
     stale_cleanup_task = asyncio.create_task(stale_ship_cleanup())
@@ -529,11 +550,9 @@ async def lifespan(app: FastAPI):
     asyncio.create_task(unified_broadcaster())
 
     asyncio.create_task(persistent_ais_stream())
-
-    # Do not start video processing loop here; it will be started in set_mode
     
     print("✅ All tasks started")
-    print("   Ready: Live AIS only (Hybrid mode will load ML models when selected)")
+    print("   Ready: Live Hybrid Fusion Mode")
 
     yield
 
@@ -897,4 +916,4 @@ if frontend_path.exists():
 
 
 if __name__ == "__main__":
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    uvicorn.run(app, host="0.0.0.0", port=9000)

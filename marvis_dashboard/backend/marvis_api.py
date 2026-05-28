@@ -258,7 +258,7 @@ def process_video_with_detection():
                     )[0]
                     dets = det_results.boxes.data.cpu().numpy()
                 except Exception as e:
-                    print(f"   âš ï¸  YOLO error frame {frame_count}: {e}")
+                    print(f"   âš ï¸   YOLO error frame {frame_count}: {e}")
                     dets = np.empty((0, 6))
 
                 # â”€â”€ DeepOcSort tracking â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
@@ -268,7 +268,7 @@ def process_video_with_detection():
                     else:
                         tracks = tracker.update(np.empty((0, 6)), frame)
                 except Exception as e:
-                    print(f"   âš ï¸  Tracker error frame {frame_count}: {e}")
+                    print(f"   âš ï¸   Tracker error frame {frame_count}: {e}")
                     tracks = []
 
                 # â”€â”€ Build ship list from tracker output â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
@@ -289,7 +289,8 @@ def process_video_with_detection():
                         heading  = compute_heading(smoothed)
                         dirn     = heading_to_dir(heading)
 
-                        # â”€â”€ LSTM / kinematic prediction â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+                        # ── LSTM / kinematic prediction ───────────────────
+
                         if buffer_complete and frame_count % update_frame_interval == 0:
                             # Compute LSTM prediction every PREDICTION_UPDATE_INTERVAL
                             if lstm_engine:
@@ -381,7 +382,7 @@ def process_video_with_detection():
                         })
 
                     except Exception as e:
-                        print(f"   âš ï¸  Track parse error: {e}")
+                        print(f"   âš ï¸   Track parse error: {e}")
                         continue
 
                 # â”€â”€ HUD bar (same as phase1.py) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
@@ -396,13 +397,29 @@ def process_video_with_detection():
                 cv2.putText(frame_display, status_txt, (8, 22),
                             cv2.FONT_HERSHEY_SIMPLEX, 0.48, (180, 195, 205), 1, cv2.LINE_AA)
 
-                # â”€â”€ Assemble frame output â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+                # â”€â”€ Collision Detection ──────────────────────────────────────
+                collision_alerts = []
+                for s1 in ships_this_frame:
+                    for s2 in ships_this_frame:
+                        if s1["id"] >= s2["id"]:
+                            continue
+                        dist = np.sqrt((s1["pos"][0] - s2["pos"][0])**2 + (s1["pos"][1] - s2["pos"][1])**2)
+                        # Pixel distance threshold for collision risk
+                        if dist < 80.0:
+                            collision_alerts.append({
+                                "vessel1": s1["name"],
+                                "vessel2": s2["name"],
+                                "distance": float(dist),
+                                "risk": "CRITICAL" if dist < 40.0 else "HIGH"
+                            })
+
+                # â”€â”€ Assemble frame output ──────────────────────────────
                 frame_output = {
                     "frame_number":   frame_count,
                     "timestamp":      time.time(),
                     "ships":          ships_this_frame,
                     "ship_count":     len(ships_this_frame),
-                    "collision_alerts": [],
+                    "collision_alerts": collision_alerts,
                     "buffer_phase":   not buffer_complete,
                     "prediction_method": "LSTM" if buffer_complete else "KINEMATIC"
                 }

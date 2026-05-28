@@ -263,7 +263,7 @@ class VideoOrchestrator:
             print(f"⚠️  Detection failed on frame {frame_num}: {e}")
 
         # Update camera status
-        self.camera_status.available = len(detections) > 0
+        self.camera_status.available = True
         self.camera_status.timestamp = time.time()
         
         # Encode video frame every 500ms (matching 2 Hz WebSocket rate)
@@ -353,19 +353,15 @@ class VideoOrchestrator:
                 cv2.putText(frame, f"ID:{ship_id_int} {method}", (x1, max(y1 - 10, 0)), 
                             cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 2)
                 
-                # Draw trajectory
+                # Draw trajectory (past path)
                 pts = self.history[ship_id]
                 for i in range(1, len(pts)):
                     cv2.line(frame, (int(pts[i-1][0]), int(pts[i-1][1])), 
                              (int(pts[i][0]), int(pts[i][1])), color, 2)
                              
-                # Draw LSTM prediction
-                if len(predicted_path_px) > 0:
-                    prev = (int(cx), int(cy))
-                    for px_p, py_p in predicted_path_px:
-                        cv2.circle(frame, (int(px_p), int(py_p)), 2, (0, 0, 255), -1)
-                        cv2.line(frame, prev, (int(px_p), int(py_p)), (0, 0, 255), 1)
-                        prev = (int(px_p), int(py_p))
+                # We no longer draw LSTM predictions on the video feed
+                # since it is hard to understand perspective. 
+                # It will be rendered on the top-view map instead.
 
                 # Create ShipDetection
                 detection = ShipDetection(

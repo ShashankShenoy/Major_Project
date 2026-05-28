@@ -49,7 +49,7 @@ def match_cv_to_ais(
 
         # Get latest AIS position
         latest_pos = ais_ship["history"][-1]
-        ais_lat, ais_lon = latest_pos[1], latest_pos[2]
+        ais_lon, ais_lat = latest_pos[1], latest_pos[2]
 
         # Calculate distance
         distance = calculate_distance_km(

@@ -1,6 +1,23 @@
-// Enterprise Maritime Intelligence System - Enhanced
+// Fusion Maritime Intelligence System - Multi-Source Sensor Integration
 
-const ws = new WebSocket(`ws://${window.location.host}/ws`);
+// Global error handler
+window.addEventListener('error', (event) => {
+  console.error('Global error:', event.error, event.message);
+  console.error('Stack:', event.error?.stack);
+});
+
+window.addEventListener('unhandledrejection', (event) => {
+  console.error('Unhandled rejection:', event.reason);
+});
+
+let ws;
+try {
+  ws = new WebSocket(`ws://${window.location.host}/ws`);
+  console.log('WebSocket created successfully');
+} catch (e) {
+  console.error('WebSocket creation failed:', e);
+  ws = null;
+}
 
 let map, mapLoaded = false, selectedShip = null, latestShips = [];
 let sessionStartTime = null, renderScheduled = false;
@@ -189,7 +206,7 @@ map.on("load", () => {
 });
 
 function initializeSources() {
-  const sources = ["ships", "tracks", "selected-track", "predicted", "selected-predicted",
+  const sources = ["ships", "matched-ships", "tracks", "selected-track", "predicted", "selected-predicted",
                    "destination", "headings", "arrows", "speed-circles", "heatmap", "ports", "collision-zones"];
 
   sources.forEach(src => {
@@ -199,6 +216,22 @@ function initializeSources() {
 }
 
 function initializeLayers() {
+  // Create ships-layer first (foundation layer for all others to reference)
+  if (!map.getLayer("ships-layer")) {
+    map.addLayer({
+      id: "ships-layer",
+      type: "circle",
+      source: "ships",
+      paint: {
+        "circle-radius": ["case", ["==", ["get", "selected"], 1], 11, 6.5],
+        "circle-color": ["get", "risk_color"],
+        "circle-stroke-width": ["case", ["==", ["get", "selected"], 1], 3, 1.5],
+        "circle-stroke-color": ["case", ["==", ["get", "selected"], 1], "#c084fc", "#d1d5db"]
+      }
+    });
+  }
+
+  // Now add other layers
   if (!map.getLayer("heatmap-layer")) {
     map.addLayer({
       id: "heatmap-layer",
@@ -263,18 +296,17 @@ function initializeLayers() {
     });
   }
 
-  if (!map.getLayer("ships-layer")) {
+  if (!map.getLayer("matched-ships-glow")) {
     map.addLayer({
-      id: "ships-layer",
+      id: "matched-ships-glow",
       type: "circle",
-      source: "ships",
+      source: "matched-ships",
       paint: {
-        "circle-radius": ["case", ["==", ["get", "selected"], 1], 11, 6.5],
-        "circle-color": ["get", "risk_color"],
-        "circle-stroke-width": ["case", ["==", ["get", "selected"], 1], 3, 1.5],
-        "circle-stroke-color": ["case", ["==", ["get", "selected"], 1], "#2563eb", "#d1d5db"]
+        "circle-radius": 10,
+        "circle-color": "#fbbf24",
+        "circle-opacity": 0.1
       }
-    });
+    }, "ships-layer");
   }
 
   if (!map.getLayer("headings-layer")) {
@@ -368,54 +400,119 @@ function selectShip(mmsi) {
   scheduleRender();
 }
 
-ws.onopen = () => {
-  console.log("Connected to AIS backend");
-  // Auto-start tracking at default Singapore Strait location on connect
-  setTimeout(() => {
-    if (ws.readyState === WebSocket.OPEN) {
-      const lat = parseFloat(document.getElementById('lat')?.value) || 1.264;
-      const lon = parseFloat(document.getElementById('lon')?.value) || 103.84;
-      sessionStartTime = Date.now();
-      ws.send(JSON.stringify({ type: 'start', lat, lon }));
-      if (map && mapLoaded) map.flyTo({ center: [lon, lat], zoom: 9 });
-      showToast('AIS tracking started — Singapore Strait');
-    }
-  }, 1200);
-};
+// Global tracking for hybrid mode - must be outside if block
+let lastMessageStats = { ais: 0, cv: 0, matched: 0, lstm: 0 };
+let lastCameraStatus = null;
 
-// Auto-activate split view when page loads in hybrid/live mode
-// Uses 'load' event so inline scripts (setViewMode) are guaranteed to be defined
-window.addEventListener('load', () => {
-  // Do NOT automatically activate view mode - let user choose
-  // The URL parameter is informational only, doesn't trigger automatic actions
-});
-ws.onmessage = (event) => {
-  const message = JSON.parse(event.data);
-  const normalizedShips = normalizeWsMessage(message);
-  if (normalizedShips) {
-    latestShips = normalizedShips;
-  }
+if (ws) {
+  ws.onopen = () => {
+    console.log("Connected to AIS backend");
+    // Auto-start tracking at default Singapore Strait location on connect
+    setTimeout(() => {
+      if (ws && ws.readyState === WebSocket.OPEN) {
+        const lat = parseFloat(document.getElementById('lat')?.value) || 1.264;
+        const lon = parseFloat(document.getElementById('lon')?.value) || 103.84;
+        sessionStartTime = Date.now();
+        ws.send(JSON.stringify({ type: 'start', lat, lon }));
+        if (map && mapLoaded) map.flyTo({ center: [lon, lat], zoom: 9 });
+        showToast('AIS tracking started — Singapore Strait');
+      }
+    }, 1200);
+  };
+
+  // Auto-activate split view when page loads in hybrid/live mode
+  // Uses 'load' event so inline scripts (setViewMode) are guaranteed to be defined
+  window.addEventListener('load', () => {
+    // Do NOT automatically activate view mode - let user choose
+    // The URL parameter is informational only, doesn't trigger automatic actions
+  });
+
+  ws.onmessage = (event) => {
+    const message = JSON.parse(event.data);
+    
+    // Log raw message structure for debugging
+    if (message.ships && message.ships.length > 0 && !window.loggedShipStructure) {
+      console.log('RAW WEBSOCKET MESSAGE FIRST SHIP:', message.ships[0]);
+      console.log('Message type:', message.type);
+      console.log('Total ships in message:', message.ships.length);
+      window.loggedShipStructure = true;  // Only log once
+    }
+    
+    const normalizedShips = normalizeWsMessage(message);
+    if (normalizedShips) {
+      latestShips = normalizedShips;
+    }
+    
+    // Store camera status and track stats every message
+    if (message.camera_status) {
+      lastCameraStatus = message.camera_status;
+    }
+    
+    // Always track hybrid mode statistics (in any mode)
+    if (normalizedShips && normalizedShips.length > 0) {
+      // Filter ships by source - handle both explicit source field and backward compatibility
+      const aisShips = normalizedShips.filter(s => {
+        if (!s.source) return s.mmsi !== undefined;  // No source field, assume AIS if has mmsi
+        return s.source === 'AIS';
+      });
+      const cvShips = normalizedShips.filter(s => s.source === 'CAMERA');
+      
+      // Debug log - DETAILED
+      if (normalizedShips.length > 0 && (aisShips.length === 0 || cvShips.length === 0)) {
+        const samples = normalizedShips.slice(0, 2).map(s => ({
+          id: s.id,
+          source: s.source,
+          mmsi: s.mmsi,
+          hasSource: !!s.source,
+          keys: Object.keys(s).slice(0, 6)
+        }));
+        console.log('Ship filtering debug:', {
+          total: normalizedShips.length,
+          ais: aisShips.length,
+          cv: cvShips.length,
+          samples: samples
+        });
+      }
+      
+      // Update tracking
+      lstmPredictions = cvShips.filter(s => 
+        s.predicted && s.predicted.length > 0 && !s.mmsi
+      );
+      
+      lastMessageStats = {
+        ais: aisShips.length,
+        cv: cvShips.length,
+        matched: cvShips.filter(s => s.mmsi).length,
+        lstm: lstmPredictions.length
+      };
+    }
+    
+    if (message.video_frame) {
+      const videoFrame = document.getElementById('videoFrame');
+      if (videoFrame) {
+        videoFrame.src = 'data:image/jpeg;base64,' + message.video_frame;
+        videoFrame.style.display = 'block';
+        // Hide placeholder, show live dot
+        const placeholder = document.getElementById('videoPlaceholder');
+        if (placeholder) placeholder.style.display = 'none';
+        const statusDot  = document.getElementById('videoPanelStatusDot');
+        const statusText = document.getElementById('videoPanelStatusText');
+        if (statusDot)  { statusDot.classList.add('live'); }
+        if (statusText) { statusText.textContent = 'LIVE'; }
+      }
+    }
+
+    scheduleRender();
+    updateAnalytics();
+    checkAlerts();
+    // Always update hybrid details display (it will check the mode itself)
+    updateHybridDetailsDisplay();
+  };
   
-  if (message.video_frame) {
-    const videoFrame = document.getElementById('videoFrame');
-    if (videoFrame) {
-      videoFrame.src = 'data:image/jpeg;base64,' + message.video_frame;
-      videoFrame.style.display = 'block';
-      // Hide placeholder, show live dot
-      const placeholder = document.getElementById('videoPlaceholder');
-      if (placeholder) placeholder.style.display = 'none';
-      const statusDot  = document.getElementById('videoPanelStatusDot');
-      const statusText = document.getElementById('videoPanelStatusText');
-      if (statusDot)  { statusDot.classList.add('live'); }
-      if (statusText) { statusText.textContent = 'LIVE'; }
-    }
-  }
-
-  scheduleRender();
-  updateAnalytics();
-  checkAlerts();
-};
-ws.onerror = (err) => console.error("Error:", err);
+  ws.onerror = (err) => console.error("WebSocket error:", err);
+} else {
+  console.warn('WebSocket failed to initialize - will retry');
+}
 
 // ─────────────────────────────
 // ANALYTICS & RISK ASSESSMENT
@@ -431,11 +528,16 @@ function getRiskScore(ship) {
 }
 
 function getRiskColor(ship) {
+  // If ship is matched to AIS (detected on camera and mapped), show yellow
+  if (ship.is_matched_to_ais) {
+    return "#fbbf24";  // Fusion yellow
+  }
+  
   const risk = getRiskScore(ship);
-  if (risk <= 2) return "#16a34a";
-  if (risk <= 5) return "#2563eb";
-  if (risk <= 7) return "#f59e0b";
-  return "#dc2626";
+  if (risk <= 2) return "#10b981";    // Green
+  if (risk <= 5) return "#3b82f6";    // Blue
+  if (risk <= 7) return "#f59e0b";    // Amber
+  return "#ef4444";                    // Red
 }
 
 function hasCollisionRisk(ship) {
@@ -474,14 +576,119 @@ function updateAnalytics() {
   document.getElementById("metricMoving").innerText = moving;
   document.getElementById("metricAnchored").innerText = anchored;
   document.getElementById("headerVessels").innerText = latestShips.length;
-  document.getElementById("headerAvgSpeed").innerText = (speeds.reduce((a, b) => a + b, 0) / speeds.length).toFixed(1);
+}
 
-  if (sessionStartTime) {
-    const elapsed = Math.round((Date.now() - sessionStartTime) / 1000);
-    const mins = Math.floor(elapsed / 60), secs = elapsed % 60;
-    document.getElementById("sessionTime").innerText = `${mins}:${secs.toString().padStart(2, '0')}`;
+// ─────────────────────────────
+// HYBRID MODE DETAILS PANEL
+// ─────────────────────────────
+
+function updateHybridModePanel(cameraStatus, stats) {
+  const hybridSection = document.getElementById('hybridModeSection');
+  if (!hybridSection) return;
+  
+  const currentMode = localStorage.getItem('selectedMode') || 'ais-only';
+  
+  // Show panel if in hybrid mode (always, not just when available)
+  if (currentMode === 'hybrid') {
+    hybridSection.style.display = 'block';
+    
+    // Update camera status
+    const statusText = document.getElementById('cameraStatusText');
+    if (statusText) {
+      if (cameraStatus && cameraStatus.available) {
+        statusText.textContent = 'ACTIVE 🟢';
+        statusText.style.color = '#4ade80';
+      } else {
+        statusText.textContent = 'Waiting for video...';
+        statusText.style.color = '#fbbf24';
+      }
+    }
+    
+    // Update camera location
+    const locText = document.getElementById('cameraLocationText');
+    if (locText && cameraStatus) {
+      locText.textContent = `${cameraStatus.lat.toFixed(3)}°N, ${cameraStatus.lon.toFixed(3)}°E`;
+    }
+    
+    // Update FOV
+    const fovText = document.getElementById('cameraFOVText');
+    if (fovText && cameraStatus) {
+      fovText.textContent = `${cameraStatus.fov_km.toFixed(1)} km`;
+    }
+  } else {
+    hybridSection.style.display = 'none';
   }
 }
+
+function updateHybridDetailsDisplay() {
+  const hybridSection = document.getElementById('hybridModeSection');
+  if (!hybridSection) return;
+  
+  const currentMode = localStorage.getItem('selectedMode') || 'ais-only';
+  hybridSection.style.display = currentMode === 'hybrid' ? 'block' : 'none';
+  
+  if (currentMode === 'hybrid') {
+    // Update camera status with latest info (if available)
+    if (lastCameraStatus) {
+      updateHybridModePanel(lastCameraStatus, lastMessageStats);
+    }
+    
+    // Always update counts regardless of camera status
+    const aisCountEl = document.getElementById('aisShipCount');
+    const cvCountEl = document.getElementById('cvShipCount');
+    const matchedEl = document.getElementById('matchedCount');
+    const lstmEl = document.getElementById('lstmCount');
+    
+    if (aisCountEl) aisCountEl.textContent = lastMessageStats.ais;
+    if (cvCountEl) cvCountEl.textContent = lastMessageStats.cv;
+    if (matchedEl) matchedEl.textContent = lastMessageStats.matched;
+    if (lstmEl) lstmEl.textContent = lastMessageStats.lstm;
+    
+    console.log('Updated hybrid counts:', lastMessageStats);
+    
+    // Update LSTM ships list
+    const lstmList = document.getElementById('lstmShipsList');
+    if (lstmList) {
+      if (lstmPredictions.length === 0) {
+        lstmList.innerHTML = '<div style="color: #999; text-align: center; padding: 10px;">No LSTM predictions yet</div>';
+      } else {
+        lstmList.innerHTML = lstmPredictions.map(ship => {
+          const confidence = ship.confidence ? (ship.confidence * 100).toFixed(0) : 'N/A';
+          const pathLength = ship.predicted ? ship.predicted.length : 0;
+          const id = ship.id || ship.name || 'Unknown';
+          return `
+            <div style="background: rgba(255,255,255,0.03); padding: 6px; margin-bottom: 4px; border-radius: 3px; border-left: 3px solid #a78bfa;">
+              <div style="color: #a78bfa; font-weight: bold; font-size: 11px;">${id}</div>
+              <div style="font-size: 9px; color: #999; margin-top: 2px;">
+                <span>Conf: <span style="color: #c4b5fd;">${confidence}%</span></span> | 
+                <span>Path: <span style="color: #c4b5fd;">${pathLength} pts</span></span>
+                <br>
+                <span style="color: #999;">Pos: ${ship.pos ? `${ship.pos[1].toFixed(3)}°, ${ship.pos[0].toFixed(3)}°` : 'N/A'}</span>
+              </div>
+            </div>
+          `;
+        }).join('');
+      }
+    }
+  }
+}
+
+  // Update session duration
+  if (sessionStartTime) {
+    const duration = Math.floor((Date.now() - sessionStartTime) / 1000);
+    const m = Math.floor(duration / 60).toString().padStart(2, '0');
+    const s = (duration % 60).toString().padStart(2, '0');
+    const el = document.getElementById("sessionTime");
+    if (el) el.innerText = `${m}:${s}`;
+  }
+
+  // Update average speed in header
+  if (latestShips.length > 0) {
+    const speeds = latestShips.map(s => s.sog || 0);
+    const avg = speeds.reduce((a, b) => a + b, 0) / speeds.length;
+    const speedEl = document.getElementById("headerAvgSpeed");
+    if (speedEl) speedEl.innerText = `${avg.toFixed(1)} kts`;
+  }
 
 function checkAlerts() {
   let alerts = [];
@@ -523,7 +730,10 @@ function scheduleRender() {
 function renderShips() {
   if (!mapLoaded) return;
 
-  const ships = [], tracks = [], selTracks = [], preds = [], selPreds = [];
+  const layers = ['ships', 'matched-ships', 'tracks', 'selected-track', 'predicted', 'selected-predicted', 'destination', 'headings', 'arrows', 'speed-circles', 'collision-zones', 'heatmap'];
+  layers.forEach(l => { if (map.getSource(l)) map.getSource(l).setData({ type: 'FeatureCollection', features: [] }); });
+
+  const ships = [], matchedShips = [], tracks = [], selTracks = [], preds = [], selPreds = [];
   const dests = [], headings = [], arrows = [], speedCircles = [], collisions = [], heatmapPoints = [];
 
   latestShips.forEach(ship => {
@@ -535,6 +745,15 @@ function renderShips() {
       geometry: { type: "Point", coordinates: ship.pos },
       properties: { mmsi: ship.mmsi, ship_key: ship.shipKey, selected, risk_color: riskColor }
     });
+
+    // Track matched ships separately for glow effect
+    if (ship.is_matched_to_ais) {
+      matchedShips.push({
+        type: "Feature",
+        geometry: { type: "Point", coordinates: ship.pos },
+        properties: { mmsi: ship.mmsi, ship_key: ship.shipKey }
+      });
+    }
 
     speedCircles.push({
       type: "Feature",
@@ -578,6 +797,7 @@ function renderShips() {
   });
 
   if (map.getSource("ships")) map.getSource("ships").setData({ type: "FeatureCollection", features: ships });
+  if (map.getSource("matched-ships")) map.getSource("matched-ships").setData({ type: "FeatureCollection", features: matchedShips });
   if (map.getSource("tracks")) map.getSource("tracks").setData({ type: "FeatureCollection", features: tracks });
   if (map.getSource("selected-track")) map.getSource("selected-track").setData({ type: "FeatureCollection", features: selTracks });
   if (map.getSource("predicted")) map.getSource("predicted").setData({ type: "FeatureCollection", features: preds });
@@ -616,54 +836,19 @@ function updateVesselDetails() {
   const distance = (stats.distance || 0).toFixed(2);
   const lat = ship.pos[1].toFixed(6);
   const lon = ship.pos[0].toFixed(6);
+  const fused = fuseDataSources(ship);
+  const lstm = lstmPredictions.find(l => l.mmsi === ship.mmsi);
 
   section.style.display = 'block';
   noSection.style.display = 'none';
 
   document.getElementById("selectedVesselContent").innerHTML = `
-    <div style="margin-bottom: 12px;">
-      <div style="font-size: 14px; font-weight: 700; color: var(--primary); margin-bottom: 4px;">${ship.name}</div>
-      <div style="font-size: 11px; color: var(--text-secondary); font-family: monospace;">MMSI: ${ship.mmsi}</div>
-    </div>
-
-    <div style="display: flex; gap: 10px; margin-bottom: 12px;">
-      <span class="status-badge status-${ship.sog > 1 ? 'moving' : 'anchored'}">
-        <span class="status-dot"></span> ${status}
-      </span>
-      <span class="status-badge" style="background: ${riskColor}20; color: ${riskColor};">
-        Risk: ${riskLevel}
-      </span>
-    </div>
-
-    <div class="metric-grid" style="margin-bottom: 12px;">
-      <div class="metric-box">
-        <div class="metric-value" style="color: ${getSpeedColor(ship.sog)};">${ship.sog.toFixed(1)}</div>
-        <div class="metric-label">Speed (kts)</div>
-      </div>
-      <div class="metric-box">
-        <div class="metric-value">${ship.cog.toFixed(0)}</div>
-        <div class="metric-label">Heading (°)</div>
-      </div>
-    </div>
-
-    <div style="font-size: 11px; margin-bottom: 12px; padding: 10px; background: var(--bg-2); border-radius: 6px;">
-      <div style="display: flex; justify-content: space-between; margin-bottom: 8px; padding-bottom: 8px; border-bottom: 1px solid var(--border);">
-        <span style="color: var(--text-secondary);">Latitude</span>
-        <span style="color: var(--text-primary); font-family: monospace; font-weight: 600;">${lat}</span>
-      </div>
-      <div style="display: flex; justify-content: space-between; margin-bottom: 8px; padding-bottom: 8px; border-bottom: 1px solid var(--border);">
-        <span style="color: var(--text-secondary);">Longitude</span>
-        <span style="color: var(--text-primary); font-family: monospace; font-weight: 600;">${lon}</span>
-      </div>
-      <div style="display: flex; justify-content: space-between; margin-bottom: 8px; padding-bottom: 8px; border-bottom: 1px solid var(--border);">
-        <span style="color: var(--text-secondary);">Track Duration</span>
-        <span style="color: var(--text-primary); font-family: monospace; font-weight: 600;">${trackDuration} min</span>
-      </div>
-      <div style="display: flex; justify-content: space-between;">
-        <span style="color: var(--text-secondary);">Distance Traveled</span>
-        <span style="color: var(--text-primary); font-family: monospace; font-weight: 600;">${distance} km</span>
-      </div>
-    </div>
+    <div style="margin-bottom: 8px;"><div style="font-size: 14px; font-weight: 700; color: var(--primary);">${ship.name}</div><div style="font-size: 10px; color: var(--text-secondary); font-family: monospace;">MMSI: ${ship.mmsi}</div></div>
+    <div style="margin-bottom: 8px; font-size: 10px;"><div style="margin-bottom: 4px; font-weight: 600; text-transform: uppercase; color: var(--text-secondary);">Sources</div>${getSourceBadgeHTML(ship)}<div style="margin-top: 3px; color: var(--text-secondary);">Fused: ${fused.source} (${(fused.confidence * 100).toFixed(0)}%)</div></div>
+    <div style="display: flex; gap: 8px; margin-bottom: 8px;"><span class="status-badge status-${ship.sog > 1 ? 'moving' : 'anchored'}"><span class="status-dot"></span>${status}</span><span class="status-badge" style="background: ${riskColor}20; color: ${riskColor};">Risk: ${riskLevel}</span></div>
+    <div class="metric-grid" style="margin-bottom: 8px;"><div class="metric-box"><div class="metric-value" style="color: ${getSpeedColor(ship.sog)};">${ship.sog.toFixed(1)}</div><div class="metric-label">Speed (kts)</div></div><div class="metric-box"><div class="metric-value">${ship.cog.toFixed(0)}</div><div class="metric-label">Heading (°)</div></div></div>
+    <div style="font-size: 10px; padding: 8px; background: var(--bg-2); border-radius: 4px;"><div style="display: flex; justify-content: space-between; margin-bottom: 4px; padding-bottom: 4px; border-bottom: 1px solid var(--border);"><span>Lat</span><span style="font-family: monospace; font-weight: 600;">${lat}</span></div><div style="display: flex; justify-content: space-between; margin-bottom: 4px; padding-bottom: 4px; border-bottom: 1px solid var(--border);"><span>Lon</span><span style="font-family: monospace; font-weight: 600;">${lon}</span></div><div style="display: flex; justify-content: space-between; margin-bottom: 4px; padding-bottom: 4px; border-bottom: 1px solid var(--border);"><span>Duration</span><span>${trackDuration} min</span></div><div style="display: flex; justify-content: space-between;"><span>Distance</span><span>${distance} km</span></div></div>
+    ${lstm ? `<div style="font-size: 10px; margin-top: 8px; padding: 8px; background: rgba(190, 24, 93, 0.1); border-left: 2px solid #be185d; border-radius: 4px;"><div style="font-weight: 600; color: #be185d;">LSTM Prediction: ${(lstm.confidence * 100).toFixed(0)}% confidence</div></div>` : ''}
   `;
 }
 
@@ -893,6 +1078,9 @@ function showToast(message) {
   setTimeout(() => toast.remove(), 3000);
 }
 
+// Export to window for use in HTML inline scripts
+window.showToastImpl = showToast;
+
 function closeModal(modalId) {
   const modal = document.getElementById(modalId);
   if (modal) modal.classList.remove('active');
@@ -1051,32 +1239,6 @@ function showDataSourceDashboard() {
   if (modal) modal.classList.add('active');
 }
 
-// Enhanced updateVesselDetails with multi-source info
-(function() {
-  const original = updateVesselDetails;
-  updateVesselDetails = function() {
-    const section = document.getElementById("vesselDetailsSection");
-    const noSection = document.getElementById("noSelectionSection");
-    if (!selectedShip) { section.style.display = 'none'; noSection.style.display = 'block'; return; }
-    const ship = latestShips.find(s => s.shipKey === selectedShip);
-    if (!ship) return;
-    const stats = ship.trackStats || {};
-    const risk = getRiskScore(ship);
-    const status = ship.sog < 1 ? "Anchored" : "Moving";
-    const riskLevel = risk <= 2 ? "Safe" : risk <= 5 ? "Normal" : risk <= 7 ? "Warning" : "Danger";
-    const riskColor = getRiskColor(ship);
-    const trackDuration = Math.round((stats.duration || 0) / 60);
-    const distance = (stats.distance || 0).toFixed(2);
-    const lat = ship.pos[1].toFixed(6);
-    const lon = ship.pos[0].toFixed(6);
-    const fused = fuseDataSources(ship);
-    const lstm = lstmPredictions.find(l => l.mmsi === ship.mmsi);
-    section.style.display = 'block';
-    noSection.style.display = 'none';
-    document.getElementById("selectedVesselContent").innerHTML = `
-      <div style="margin-bottom: 8px;"><div style="font-size: 14px; font-weight: 700; color: var(--primary);">${ship.name}</div><div style="font-size: 10px; color: var(--text-secondary); font-family: monospace;">MMSI: ${ship.mmsi}</div></div>
-      <div style="margin-bottom: 8px; font-size: 10px;"><div style="margin-bottom: 4px; font-weight: 600; text-transform: uppercase; color: var(--text-secondary);">Sources</div>${getSourceBadgeHTML(ship)}<div style="margin-top: 3px; color: var(--text-secondary);">Fused: ${fused.source} (${(fused.confidence * 100).toFixed(0)}%)</div></div>
-      <div style="display: flex; gap: 8px; margin-bottom: 8px;"><span class="status-badge status-${ship.sog > 1 ? 'moving' : 'anchored'}"><span class="status-dot"></span>${status}</span><span class="status-badge" style="background: ${riskColor}20; color: ${riskColor};">Risk: ${riskLevel}</span></div>
       <div class="metric-grid" style="margin-bottom: 8px;"><div class="metric-box"><div class="metric-value" style="color: ${getSpeedColor(ship.sog)};">${ship.sog.toFixed(1)}</div><div class="metric-label">Speed (kts)</div></div><div class="metric-box"><div class="metric-value">${ship.cog.toFixed(0)}</div><div class="metric-label">Heading (°)</div></div></div>
       <div style="font-size: 10px; padding: 8px; background: var(--bg-2); border-radius: 4px;"><div style="display: flex; justify-content: space-between; margin-bottom: 4px; padding-bottom: 4px; border-bottom: 1px solid var(--border);"><span>Lat</span><span style="font-family: monospace; font-weight: 600;">${lat}</span></div><div style="display: flex; justify-content: space-between; margin-bottom: 4px; padding-bottom: 4px; border-bottom: 1px solid var(--border);"><span>Lon</span><span style="font-family: monospace; font-weight: 600;">${lon}</span></div><div style="display: flex; justify-content: space-between; margin-bottom: 4px; padding-bottom: 4px; border-bottom: 1px solid var(--border);"><span>Duration</span><span>${trackDuration} min</span></div><div style="display: flex; justify-content: space-between;"><span>Distance</span><span>${distance} km</span></div></div>
       ${lstm ? `<div style="font-size: 10px; margin-top: 8px; padding: 8px; background: rgba(190, 24, 93, 0.1); border-left: 2px solid #be185d; border-radius: 4px;"><div style="font-weight: 600; color: #be185d;">LSTM Prediction: ${(lstm.confidence * 100).toFixed(0)}% confidence</div></div>` : ''}
@@ -1120,7 +1282,8 @@ function switchMode(mode) {
   const activeBtn = document.getElementById(btnMap[mode]);
   if (activeBtn) activeBtn.classList.add('active');
 
-  fetch('/api/mode', {
+  // Call the fusion backend (same origin) to switch mode
+  fetch(window.location.origin + '/api/mode', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ mode })
