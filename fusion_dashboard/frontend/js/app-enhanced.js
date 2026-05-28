@@ -143,6 +143,11 @@ function initMap() {
         type: 'geojson',
         data: { type: 'FeatureCollection', features: [] }
       });
+
+      map.addSource('arrows', {
+        type: 'geojson',
+        data: { type: 'FeatureCollection', features: [] }
+      });
       
       // Add collision zones layer (underneath ships so it doesn't hide their outlines)
       map.addLayer({
@@ -198,10 +203,33 @@ function initMap() {
         id: 'lstm-layer',
         type: 'line',
         source: 'lstm-predictions',
+        layout: {
+          'line-cap': 'round',
+          'line-join': 'round'
+        },
         paint: {
           'line-color': ['get', 'color'],
-          'line-width': 2,
-          'line-dasharray': [4, 4]
+          'line-width': 3,
+          'line-opacity': 0.85,
+          'line-dasharray': [0, 2]
+        }
+      });
+      
+      // Add arrows layer
+      map.addLayer({
+        id: 'arrows-layer',
+        type: 'symbol',
+        source: 'arrows',
+        layout: {
+          'text-field': ['get', 'arrow'],
+          'text-size': 24,
+          'text-allow-overlap': true,
+          'text-ignore-placement': true
+        },
+        paint: {
+          'text-color': '#000000',
+          'text-halo-color': '#ffffff',
+          'text-halo-width': 1
         }
       });
       
@@ -257,7 +285,8 @@ function renderAllShips() {
           sog: s.sog,
           cog: s.cog,
           risk: hasRisk,
-          matched: matchedShips.has(String(s.mmsi || s.id))
+          matched: matchedShips.has(String(s.mmsi || s.id)),
+          arrow: getArrowSymbol(s.cog || 0)
         }
       };
     });
@@ -278,7 +307,8 @@ function renderAllShips() {
           source: 'CV',
           confidence: s.confidence,
           risk: hasRisk,
-          matched: false
+          matched: false,
+          arrow: getArrowSymbol(s.cog || s.heading || 0)
         }
       };
     });
@@ -301,23 +331,26 @@ function renderAllShips() {
         properties: { predicted: true, color: color }
       };
     });
+
+  // Build arrow features
+  const arrowsFeatures = [...aisFeatures, ...cvFeatures].map(f => ({
+    type: 'Feature',
+    geometry: { type: 'Point', coordinates: f.geometry.coordinates },
+    properties: { arrow: f.properties.arrow }
+  }));
   
   // Update sources
   const aisSource = map.getSource('ais-ships');
   const cvSource = map.getSource('cv-ships');
   const colSource = map.getSource('collision-zones');
+  const lstmSource = map.getSource('lstm-predictions');
+  const arrowsSource = map.getSource('arrows');
   
   if (aisSource) aisSource.setData({ type: 'FeatureCollection', features: aisFeatures });
   if (cvSource) cvSource.setData({ type: 'FeatureCollection', features: cvFeatures });
   if (colSource) colSource.setData({ type: 'FeatureCollection', features: collisions });
-  
-  const lstmSource = map.getSource('lstm-predictions');
-  if (lstmSource) {
-    lstmSource.setData({ 
-      type: 'FeatureCollection', 
-      features: lstmFeatures 
-    });
-  }
+  if (lstmSource) lstmSource.setData({ type: 'FeatureCollection', features: lstmFeatures });
+  if (arrowsSource) arrowsSource.setData({ type: 'FeatureCollection', features: arrowsFeatures });
   
   // Update Analytics Metrics
   const speeds = allShips.map(s => s.sog || 0);
@@ -399,6 +432,12 @@ function updateHybridDetailsDisplay() {
       lstmListEl.innerHTML = '<div style="color: #999; text-align: center; padding: 10px;">No LSTM predictions yet</div>';
     }
   }
+}
+
+function getArrowSymbol(cog) {
+  if (cog === undefined || cog === null) return '';
+  const dirs = ['↑', '↗', '→', '↘', '↓', '↙', '←', '↖'];
+  return dirs[Math.round((cog % 360) / 45) % 8];
 }
 
 // Handle Load Video button (Handled by index.html switchVideo)

@@ -383,6 +383,11 @@ class VideoOrchestrator:
                 # since it is hard to understand perspective. 
                 # It will be rendered on the top-view map instead.
 
+                # Connect the line to the ship's current location seamlessly
+                display_path_gps = []
+                if predicted_path_gps:
+                    display_path_gps = [(gps_lat, gps_lon)] + predicted_path_gps
+
                 # Create ShipDetection
                 detection = ShipDetection(
                     id=ship_id,
@@ -397,7 +402,7 @@ class VideoOrchestrator:
                     confidence=confidence,
                     source=SourceType.CAMERA,
                     predicted_path_pixels=predicted_path_px,
-                    predicted_path_gps=predicted_path_gps,
+                    predicted_path_gps=display_path_gps,
                     prediction_method=method,
                     is_matched_to_ais=False,
                     first_seen_frame=tracked_ships[ship_id]["first_seen_frame"],

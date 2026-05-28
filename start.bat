@@ -17,8 +17,8 @@ REM ─────────────────────────�
 set AIS_API_KEY=9d0b24f784dfc1707e85d6aa588dd6254a7235d7
 set VIDEO_PATH=C:\Users\91944\MajorProject\data\videos\input.avi
 set DEVICE=cuda
-set CAMERA_LAT=1.2800
-set CAMERA_LON=103.8500
+set CAMERA_LAT=1.2400
+set CAMERA_LON=103.8400
 set FOV_KM=15.0
 set AIS_ALLOW_INSECURE_SSL=true
 set DISPLAY_UPDATE_SECONDS=1.0
