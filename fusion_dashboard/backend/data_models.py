@@ -140,4 +140,5 @@ class VideoProcessingConfig(BaseModel):
     device: str = Field(default="cuda", description="Device: 'cuda' or 'cpu'")
     yolo_model: str = Field(default="yolov8m", description="YOLO model variant")
     confidence_threshold: float = Field(default=0.5, ge=0.0, le=1.0)
-    cv_match_radius_deg: float = Field(default=0.05, description="CV-to-AIS matching radius in degrees")
+    cv_match_radius_deg: float = Field(default=0.05, description="CV-to-AIS matching radius in degrees (~5.5km)")
+    track_match_distance_pixels: float = Field(default=80.0, description="Track association distance in pixels for DeepOcSort")

@@ -109,7 +109,24 @@ cd /d "!FUSION_BACKEND_DIR!"
 if not exist "fusion_backend.py" (
     echo %ESC%[93m⚠️  fusion_backend.py not found — Fusion mode unavailable.%ESC%[0m
 ) else (
-    start "🔀 Fusion Backend (9000)" cmd /k "set AIS_API_KEY=!AIS_API_KEY!&set ENABLE_VIDEO_PROCESSING=true&set VIDEO_PATH=!VIDEO_PATH!&set DEVICE=!DEVICE!&set CAMERA_LAT=!CAMERA_LAT!&set CAMERA_LON=!CAMERA_LON!&set FOV_KM=!FOV_KM!&set AIS_ALLOW_INSECURE_SSL=!AIS_ALLOW_INSECURE_SSL!&echo Fusion Backend starting...&python -m uvicorn fusion_backend:app --port 9000"
+    echo %ESC%[93mCreating auto-restart wrapper for Fusion Backend...%ESC%[0m
+    echo @echo off > run_fusion.bat
+    echo set AIS_API_KEY=!AIS_API_KEY!>> run_fusion.bat
+    echo set ENABLE_VIDEO_PROCESSING=true>> run_fusion.bat
+    echo set VIDEO_PATH=!VIDEO_PATH!>> run_fusion.bat
+    echo set DEVICE=!DEVICE!>> run_fusion.bat
+    echo set CAMERA_LAT=!CAMERA_LAT!>> run_fusion.bat
+    echo set CAMERA_LON=!CAMERA_LON!>> run_fusion.bat
+    echo set FOV_KM=!FOV_KM!>> run_fusion.bat
+    echo set AIS_ALLOW_INSECURE_SSL=!AIS_ALLOW_INSECURE_SSL!>> run_fusion.bat
+    echo :loop >> run_fusion.bat
+    echo echo Fusion Backend starting... >> run_fusion.bat
+    echo python -m uvicorn fusion_backend:app --port 9000 >> run_fusion.bat
+    echo echo %%ESC%%[91m⚠️ FUSION BACKEND CRASHED! Auto-restarting in 2 seconds...%%ESC%%[0m >> run_fusion.bat
+    echo timeout /t 2 /nobreak ^>nul >> run_fusion.bat
+    echo goto loop >> run_fusion.bat
+    
+    start "🔀 Fusion Backend (9000)" cmd /c "run_fusion.bat"
     ping -n 3 127.0.0.1 >nul
 )
 

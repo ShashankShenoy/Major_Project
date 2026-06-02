@@ -46,11 +46,14 @@ WEBSOCKET_HEARTBEAT = 30
 
 # Video processing config
 ENABLE_VIDEO_PROCESSING = True
+VIDEO_FRAME_QUEUE_SIZE = 30  # Conservative size to prevent memory bloat
+VIDEO_FRAME_DROP_THRESHOLD = 0.9  # Drop frames if queue reaches 90% capacity
 _DEFAULT_VIDEO = os.getenv("VIDEO_PATH", "")
 CAMERA_LAT = float(os.getenv("CAMERA_LAT", "1.2800"))
 CAMERA_LON = float(os.getenv("CAMERA_LON", "103.8500"))
 FOV_KM = float(os.getenv("FOV_KM", "2.0"))
 CV_MATCH_RADIUS_KM = float(os.getenv("CV_MATCH_RADIUS_KM", "5.5"))
+TRACK_MATCH_DISTANCE_PIXELS = float(os.getenv("TRACK_MATCH_DISTANCE_PIXELS", "80.0"))
 DEVICE = os.getenv("DEVICE", "cuda")
 CONFIDENCE_THRESHOLD = float(os.getenv("CONFIDENCE_THRESHOLD", "0.5"))
 AIS_ALLOW_INSECURE_SSL = os.getenv("AIS_ALLOW_INSECURE_SSL", "false").lower() in ["true", "1", "yes"]
@@ -492,7 +495,7 @@ async def unified_broadcaster():
 
                 for client in clients_snapshot:
                     try:
-                        await client.send_json(unified_msg)
+                        await asyncio.wait_for(client.send_json(unified_msg), timeout=0.5)
                     except Exception:
                         disconnected.append(client)
 
@@ -523,7 +526,8 @@ async def lifespan(app: FastAPI):
     print(f"   Video Processing: {'ENABLED' if ENABLE_VIDEO_PROCESSING else 'DISABLED (AIS-only mode)'}")
 
     # Create queue for video frames
-    video_frame_queue = asyncio.Queue(maxsize=100)
+    # Initialize queues
+    video_frame_queue = asyncio.Queue(maxsize=VIDEO_FRAME_QUEUE_SIZE)
     
     # Do NOT initialize the heavy models on startup. Wait until 'hybrid' mode is selected.
     video_orchestrator = None
@@ -656,19 +660,53 @@ async def websocket_endpoint(ws: WebSocket):
 
     try:
         while True:
-            data = await ws.receive_text()
-            msg = json.loads(data)
+            try:
+                data = await ws.receive_text()
+                msg = json.loads(data)
+            except json.JSONDecodeError as e:
+                print(f"⚠️  Invalid JSON from client: {e}")
+                continue
+            except Exception as e:
+                print(f"❌ WebSocket receive error: {e}")
+                break
 
-            if msg.get("type") == "ping":
+            msg_type = msg.get("type")
+            if not isinstance(msg_type, str):
+                print(f"⚠️  Invalid message type (not string): {type(msg_type)}")
+                continue
+
+            if msg_type == "ping":
                 await ws.send_json({"type": "pong"})
-            elif msg.get("type") == "start":
+            elif msg_type == "start":
                 lat = msg.get("lat")
                 lon = msg.get("lon")
 
+                # Validate presence
                 if lat is None or lon is None:
+                    print(f"⚠️  'start' message missing lat or lon")
+                    await ws.send_json({"type": "error", "error": "lat and lon required"})
                     continue
 
-                if not (-90 <= lat <= 90 and -180 <= lon <= 180):
+                # Validate types
+                if not isinstance(lat, (int, float)):
+                    print(f"⚠️  Invalid lat type: {type(lat)} (expected number)")
+                    await ws.send_json({"type": "error", "error": "lat must be a number"})
+                    continue
+
+                if not isinstance(lon, (int, float)):
+                    print(f"⚠️  Invalid lon type: {type(lon)} (expected number)")
+                    await ws.send_json({"type": "error", "error": "lon must be a number"})
+                    continue
+
+                # Validate ranges
+                if not (-90 <= lat <= 90):
+                    print(f"⚠️  Invalid lat range: {lat}")
+                    await ws.send_json({"type": "error", "error": "lat must be between -90 and 90"})
+                    continue
+
+                if not (-180 <= lon <= 180):
+                    print(f"⚠️  Invalid lon range: {lon}")
+                    await ws.send_json({"type": "error", "error": "lon must be between -180 and 180"})
                     continue
 
                 tracking_session_id += 1
@@ -681,40 +719,54 @@ async def websocket_endpoint(ws: WebSocket):
                 with ships_lock:
                     ships.clear()
 
-                print(f"Tracking: {tracking_target}")
-            elif msg.get("type") == "replay":
-                replay_idx = msg.get("index", 0)
-                replay_payload = []
+                print(f"✅ Tracking started: lat={lat}, lon={lon} [session {tracking_session_id}]")
+                await ws.send_json({"type": "ack", "session": tracking_session_id})
 
-                with ships_lock:
-                    ships_snapshot = dict(ships.items())
-
-                for mmsi, ship in ships_snapshot.items():
-                    if len(ship["history"]) <= replay_idx:
+            elif msg_type == "replay":
+                try:
+                    replay_idx = msg.get("index", 0)
+                    if not isinstance(replay_idx, int) or replay_idx < 0:
+                        print(f"⚠️  Invalid replay index: {replay_idx}")
+                        await ws.send_json({"type": "error", "error": "index must be a non-negative integer"})
                         continue
 
-                    target_point = ship["history"][replay_idx]
-                    coords = [
-                        [p[1], p[2]]
-                        for p in ship["history"][:replay_idx + 1]
-                    ]
+                    replay_payload = []
 
-                    replay_payload.append({
-                        "mmsi": mmsi,
-                        "name": ship["name"],
-                        "pos": [target_point[1], target_point[2]],
-                        "track": coords,
-                        "predicted": ship.get("predicted", []),
-                        "sog": ship["sog"],
-                        "cog": ship["cog"],
-                        "lastUpdate": target_point[0],
-                        "trackStats": get_track_stats(ship["history"][:replay_idx + 1])
-                    })
+                    with ships_lock:
+                        ships_snapshot = dict(ships.items())
 
-                await ws.send_json(replay_payload)
+                    for mmsi, ship in ships_snapshot.items():
+                        if len(ship["history"]) <= replay_idx:
+                            continue
+
+                        target_point = ship["history"][replay_idx]
+                        coords = [
+                            [p[1], p[2]]
+                            for p in ship["history"][:replay_idx + 1]
+                        ]
+
+                        replay_payload.append({
+                            "mmsi": mmsi,
+                            "name": ship["name"],
+                            "pos": [target_point[1], target_point[2]],
+                            "track": coords,
+                            "predicted": ship.get("predicted", []),
+                            "sog": ship["sog"],
+                            "cog": ship["cog"],
+                            "lastUpdate": target_point[0],
+                            "trackStats": get_track_stats(ship["history"][:replay_idx + 1])
+                        })
+
+                    await ws.send_json(replay_payload)
+                except Exception as e:
+                    print(f"❌ Replay error: {e}")
+                    await ws.send_json({"type": "error", "error": f"Replay failed: {str(e)}"})
+            else:
+                print(f"⚠️  Unknown message type: {msg_type}")
+                await ws.send_json({"type": "error", "error": f"Unknown message type: {msg_type}"})
 
     except Exception as e:
-        print(f"WebSocket error: {e}")
+        print(f"❌ WebSocket error: {e}")
     finally:
         with clients_lock:
             clients.discard(ws)
@@ -802,82 +854,13 @@ async def get_diagnostics():
 
 
 # ─────────────────────────────────────────────
-# MODE SWITCHING
+# MODE SWITCHING - with proper error recovery
 # ─────────────────────────────────────────────
-@app.post("/api/mode/{mode}")
-async def set_mode(mode: str):
-    """Switch between 'ais-only' and 'hybrid' modes"""
+@app.post("/api/mode")
+async def set_mode(request: Request):
+    """Switch between 'ais-only' and 'hybrid' modes with atomic transitions"""
     global current_mode, video_orchestrator, video_frame_queue
 
-    if mode not in ["ais-only", "hybrid"]:
-        return {"success": False, "error": f"Invalid mode: {mode}. Must be 'ais-only' or 'hybrid'"}
-
-    if not ENABLE_VIDEO_PROCESSING and mode == "hybrid":
-        return {"success": False, "error": "Hybrid mode not available. Video processing is disabled."}
-
-    previous_mode = current_mode
-    current_mode = mode
-    
-    if current_mode == "hybrid" and video_orchestrator is None:
-        print("⏳ Initializing Hybrid Mode (Loading YOLO & DeepOcSort)...")
-        try:
-            config = VideoProcessingConfig(
-                video_path=VIDEO_PATH,
-                camera_lat=CAMERA_LAT,
-                camera_lon=CAMERA_LON,
-                fov_km=FOV_KM,
-                device=DEVICE,
-                confidence_threshold=CONFIDENCE_THRESHOLD,
-                cv_match_radius_deg=CV_MATCH_RADIUS_KM / 111.0
-            )
-            video_orchestrator = await create_video_orchestrator(config)
-            await video_orchestrator.initialize(video_frame_queue)
-            await start_video_processing()
-            print(f"✅ Hybrid Mode Initialized - VIDEO_PATH={Path(VIDEO_PATH).name}")
-        except Exception as e:
-            print(f"❌ Video orchestrator init failed: {e}")
-            import traceback
-            traceback.print_exc()
-            video_orchestrator = None
-            current_mode = "ais-only"
-            return {"success": False, "error": f"Failed to load ML models: {e}"}
-            
-    elif current_mode == "ais-only" and video_orchestrator is not None:
-        print("🛑 Stopping Video Processing (Freeing ML models)...")
-        video_orchestrator.stop()
-        await cancel_video_processing_task()
-        video_orchestrator = None
-        
-        # Flush queue to free memory
-        while not video_frame_queue.empty():
-            try:
-                video_frame_queue.get_nowait()
-            except asyncio.QueueEmpty:
-                break
-                
-        # Try to clear CUDA memory if torch is imported
-        try:
-            import torch
-            if torch.cuda.is_available():
-                torch.cuda.empty_cache()
-                print("✅ CUDA memory cleared")
-        except:
-            pass
-
-    print(f"✅ Mode switched: {previous_mode} → {current_mode} [VIDEO_ENABLED={ENABLE_VIDEO_PROCESSING}]")
-
-    return {
-        "success": True,
-        "mode": current_mode,
-        "previous_mode": previous_mode,
-        "video_enabled": ENABLE_VIDEO_PROCESSING,
-        "video_path": VIDEO_PATH
-    }
-
-
-@app.post("/api/mode")
-async def set_mode_from_body(request: Request):
-    """Compatibility endpoint for clients that POST JSON {"mode": "..."}."""
     try:
         payload = await request.json()
     except Exception:
@@ -887,7 +870,140 @@ async def set_mode_from_body(request: Request):
     if not mode:
         return {"success": False, "error": "Request body must include a mode field"}
 
-    return await set_mode(mode)
+    if mode not in ["ais-only", "hybrid"]:
+        return {"success": False, "error": f"Invalid mode: {mode}. Must be 'ais-only' or 'hybrid'"}
+
+    if not ENABLE_VIDEO_PROCESSING and mode == "hybrid":
+        return {"success": False, "error": "Hybrid mode not available. Video processing is disabled."}
+
+    # If already in target mode, return success
+    if current_mode == mode:
+        # If the video thread died (e.g. video ended or crashed), force a restart
+        if mode == "hybrid" and video_orchestrator is not None and not video_orchestrator.is_processing:
+            print("⚠️ Video orchestrator stopped but mode is hybrid. Force restarting...")
+            video_orchestrator = None
+        else:
+            return {"success": True, "mode": current_mode, "message": f"Already in {mode} mode"}
+
+    previous_mode = current_mode
+    
+    try:
+        if mode == "hybrid" and video_orchestrator is None:
+            print("⏳ Initializing Hybrid Mode (Loading YOLO & DeepOcSort)...")
+            try:
+                config = VideoProcessingConfig(
+                    video_path=VIDEO_PATH,
+                    camera_lat=CAMERA_LAT,
+                    camera_lon=CAMERA_LON,
+                    fov_km=FOV_KM,
+                    device=DEVICE,
+                    confidence_threshold=CONFIDENCE_THRESHOLD,
+                    cv_match_radius_deg=CV_MATCH_RADIUS_KM / 111.0,
+                    track_match_distance_pixels=TRACK_MATCH_DISTANCE_PIXELS
+                )
+                temp_orchestrator = await create_video_orchestrator(config)
+                await temp_orchestrator.initialize(video_frame_queue)
+                await start_video_processing()
+                
+                # Only update global state after everything succeeds
+                video_orchestrator = temp_orchestrator
+                current_mode = "hybrid"
+                print(f"✅ Hybrid Mode Initialized - VIDEO_PATH={Path(VIDEO_PATH).name}")
+                
+            except Exception as e:
+                print(f"❌ Video orchestrator init failed: {e}")
+                import traceback
+                traceback.print_exc()
+                # Don't update global state - rollback is implicit by not assigning
+                raise
+                
+        elif mode == "ais-only" and video_orchestrator is not None:
+            print("🛑 Stopping Video Processing (Freeing ML models)...")
+            try:
+                # Stop orchestrator
+                video_orchestrator.stop()
+                await cancel_video_processing_task()
+                
+                # Explicit CUDA cleanup and force garbage collection of models
+                try:
+                    import gc
+                    if hasattr(video_orchestrator, 'yolo_model'):
+                        del video_orchestrator.yolo_model
+                    if hasattr(video_orchestrator, 'tracker'):
+                        del video_orchestrator.tracker
+                    if hasattr(video_orchestrator, 'lstm_engine'):
+                        del video_orchestrator.lstm_engine
+                    gc.collect()
+
+                    import torch
+                    if torch.cuda.is_available():
+                        torch.cuda.synchronize()  # Wait for all CUDA operations
+                        torch.cuda.empty_cache()
+                        torch.cuda.reset_peak_memory_stats()
+                        print("✅ CUDA memory cleared and reset")
+                except ImportError:
+                    print("⚠️  PyTorch not available for CUDA cleanup")
+                except Exception as e:
+                    print(f"⚠️  CUDA cleanup warning: {e}")
+                
+                # Clear queue to free frame memory
+                frames_cleared = 0
+                while not video_frame_queue.empty():
+                    try:
+                        video_frame_queue.get_nowait()
+                        frames_cleared += 1
+                    except asyncio.QueueEmpty:
+                        break
+                
+                if frames_cleared > 0:
+                    print(f"✅ Cleared {frames_cleared} frames from queue")
+                
+                # Only update global state after cleanup succeeds
+                video_orchestrator = None
+                current_mode = "ais-only"
+                
+            except Exception as e:
+                print(f"⚠️  Error during video processing stop: {e}")
+                # Force cleanup anyway
+                video_orchestrator = None
+                current_mode = "ais-only"
+                import traceback
+                traceback.print_exc()
+                raise
+
+    except Exception as e:
+        # Rollback on any failure
+        current_mode = previous_mode
+        
+        # Aggressively clean up memory to prevent locking up on the next retry
+        try:
+            import gc
+            if 'temp_orchestrator' in locals():
+                del temp_orchestrator
+            gc.collect()
+            import torch
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+                print("🧹 Memory aggressively cleared after initialization failure")
+        except Exception as cleanup_err:
+            pass
+
+        return {
+            "success": False,
+            "error": f"Failed to switch to {mode} mode: {str(e)}",
+            "mode": current_mode,
+            "previous_mode": previous_mode
+        }
+
+    print(f"✅ Mode switched: {previous_mode} → {current_mode} [VIDEO_ENABLED={ENABLE_VIDEO_PROCESSING}]")
+
+    return {
+        "success": True,
+        "mode": current_mode,
+        "previous_mode": previous_mode,
+        "video_enabled": ENABLE_VIDEO_PROCESSING,
+        "video_path": VIDEO_PATH if current_mode == "hybrid" else None
+    }
 
 
 @app.get("/api/mode")
@@ -980,7 +1096,8 @@ async def select_video(request: Request):
                 fov_km=FOV_KM,
                 device=DEVICE,
                 confidence_threshold=CONFIDENCE_THRESHOLD,
-                cv_match_radius_deg=CV_MATCH_RADIUS_KM / 111.0
+                cv_match_radius_deg=CV_MATCH_RADIUS_KM / 111.0,
+                track_match_distance_pixels=TRACK_MATCH_DISTANCE_PIXELS
             )
             video_orchestrator = await create_video_orchestrator(config)
             await video_orchestrator.initialize(video_frame_queue)
@@ -1002,7 +1119,8 @@ async def select_video(request: Request):
                 fov_km=FOV_KM,
                 device=DEVICE,
                 confidence_threshold=CONFIDENCE_THRESHOLD,
-                cv_match_radius_deg=CV_MATCH_RADIUS_KM / 111.0
+                cv_match_radius_deg=CV_MATCH_RADIUS_KM / 111.0,
+                track_match_distance_pixels=TRACK_MATCH_DISTANCE_PIXELS
             )
             video_orchestrator = await create_video_orchestrator(config)
             await video_orchestrator.initialize(video_frame_queue)

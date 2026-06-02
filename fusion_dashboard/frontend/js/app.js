@@ -11,13 +11,59 @@ window.addEventListener('unhandledrejection', (event) => {
 });
 
 let ws;
-try {
-  ws = new WebSocket(`ws://${window.location.host}/ws`);
-  console.log('WebSocket created successfully');
-} catch (e) {
-  console.error('WebSocket creation failed:', e);
-  ws = null;
+let wsReconnectAttempts = 0;
+const wsMaxReconnectAttempts = 10;
+const wsReconnectDelay = 1000;
+let wsHeartbeatInterval = null;
+
+function initWebSocket() {
+  try {
+    ws = new WebSocket(`ws://${window.location.host}/ws`);
+    ws.onopen = () => {
+      console.log("Connected to AIS backend");
+      wsReconnectAttempts = 0;
+      if (wsHeartbeatInterval) clearInterval(wsHeartbeatInterval);
+      wsHeartbeatInterval = setInterval(() => {
+        if (ws.readyState === WebSocket.OPEN) {
+          ws.send(JSON.stringify({ type: 'ping' }));
+        }
+      }, 30000);
+      
+      setTimeout(() => {
+        if (ws && ws.readyState === WebSocket.OPEN) {
+          const lat = parseFloat(document.getElementById('lat')?.value) || 1.264;
+          const lon = parseFloat(document.getElementById('lon')?.value) || 103.84;
+          sessionStartTime = Date.now();
+          ws.send(JSON.stringify({ type: 'start', lat, lon }));
+          if (map && mapLoaded) map.flyTo({ center: [lon, lat], zoom: 9 });
+          showToast('AIS tracking started');
+        }
+      }, 1200);
+    };
+    
+    ws.onmessage = (event) => {
+      const message = JSON.parse(event.data);
+      if (message.type === 'pong') return;
+      if (window.wsOnMessageCallback) window.wsOnMessageCallback(event, message);
+    };
+    
+    ws.onerror = (err) => console.error("WebSocket error:", err);
+    
+    ws.onclose = () => {
+      console.warn('WebSocket closed');
+      if (wsHeartbeatInterval) clearInterval(wsHeartbeatInterval);
+      if (wsReconnectAttempts < wsMaxReconnectAttempts) {
+        wsReconnectAttempts++;
+        const delay = wsReconnectDelay * Math.pow(2, wsReconnectAttempts - 1);
+        console.log(`Reconnecting in ${delay}ms...`);
+        setTimeout(initWebSocket, Math.min(delay, 30000));
+      }
+    };
+  } catch (e) {
+    console.error('WebSocket creation failed:', e);
+  }
 }
+initWebSocket();
 
 let map, mapLoaded = false, selectedShip = null, latestShips = [];
 let sessionStartTime = null, renderScheduled = false;
@@ -256,7 +302,7 @@ function initializeLayers() {
       id: "tracks-layer",
       type: "line",
       source: "tracks",
-      paint: { "line-color": "#9ca3af", "line-width": 1, "line-opacity": 0.4 }
+      paint: { "line-color": "#d1d5db", "line-width": 1, "line-opacity": 0.4 }
     });
   }
 
@@ -265,7 +311,7 @@ function initializeLayers() {
       id: "selected-track-layer",
       type: "line",
       source: "selected-track",
-      paint: { "line-color": "#2563eb", "line-width": 2.5, "line-opacity": 0.95 }
+      paint: { "line-color": "#3b82f6", "line-width": 3, "line-opacity": 1.0 }
     });
   }
 
@@ -274,7 +320,7 @@ function initializeLayers() {
       id: "predicted-layer",
       type: "line",
       source: "predicted",
-      paint: { "line-color": "#9ca3af", "line-width": 1.5, "line-dasharray": [3, 3], "line-opacity": 0.3 }
+      paint: { "line-color": "#ec4899", "line-width": 2.5, "line-dasharray": [1.5, 2.5], "line-opacity": 0.9 }
     });
   }
 
@@ -371,9 +417,16 @@ function setupMapClickHandler() {
 }
 
 function startTracking() {
-  if (ws.readyState !== WebSocket.OPEN) return;
+  if (ws && ws.readyState !== WebSocket.OPEN) {
+    showToast('WebSocket not connected');
+    return;
+  }
   const lat = parseFloat(document.getElementById("lat").value);
   const lon = parseFloat(document.getElementById("lon").value);
+  if (isNaN(lat) || isNaN(lon)) {
+    showToast('Invalid coordinates');
+    return;
+  }
   selectedShip = null;
   latestShips = [];
   renderScheduled = false;
@@ -404,115 +457,67 @@ function selectShip(mmsi) {
 let lastMessageStats = { ais: 0, cv: 0, matched: 0, lstm: 0 };
 let lastCameraStatus = null;
 
-if (ws) {
-  ws.onopen = () => {
-    console.log("Connected to AIS backend");
-    // Auto-start tracking at default Singapore Strait location on connect
-    setTimeout(() => {
-      if (ws && ws.readyState === WebSocket.OPEN) {
-        const lat = parseFloat(document.getElementById('lat')?.value) || 1.264;
-        const lon = parseFloat(document.getElementById('lon')?.value) || 103.84;
-        sessionStartTime = Date.now();
-        ws.send(JSON.stringify({ type: 'start', lat, lon }));
-        if (map && mapLoaded) map.flyTo({ center: [lon, lat], zoom: 9 });
-        showToast('AIS tracking started — Singapore Strait');
-      }
-    }, 1200);
-  };
-
-  // Auto-activate split view when page loads in hybrid/live mode
-  // Uses 'load' event so inline scripts (setViewMode) are guaranteed to be defined
-  window.addEventListener('load', () => {
-    // Do NOT automatically activate view mode - let user choose
-    // The URL parameter is informational only, doesn't trigger automatic actions
-  });
-
-  ws.onmessage = (event) => {
-    const message = JSON.parse(event.data);
-    
-    // Log raw message structure for debugging
-    if (message.ships && message.ships.length > 0 && !window.loggedShipStructure) {
-      console.log('RAW WEBSOCKET MESSAGE FIRST SHIP:', message.ships[0]);
-      console.log('Message type:', message.type);
-      console.log('Total ships in message:', message.ships.length);
-      window.loggedShipStructure = true;  // Only log once
-    }
-    
-    const normalizedShips = normalizeWsMessage(message);
-    if (normalizedShips) {
-      latestShips = normalizedShips;
-    }
-    
-    // Store camera status and track stats every message
-    if (message.camera_status) {
-      lastCameraStatus = message.camera_status;
-    }
-    
-    // Always track hybrid mode statistics (in any mode)
-    if (normalizedShips && normalizedShips.length > 0) {
-      // Filter ships by source - handle both explicit source field and backward compatibility
-      const aisShips = normalizedShips.filter(s => {
-        if (!s.source) return s.mmsi !== undefined;  // No source field, assume AIS if has mmsi
-        return s.source === 'AIS';
-      });
-      const cvShips = normalizedShips.filter(s => s.source === 'CAMERA');
-      
-      // Debug log - DETAILED
-      if (normalizedShips.length > 0 && (aisShips.length === 0 || cvShips.length === 0)) {
-        const samples = normalizedShips.slice(0, 2).map(s => ({
-          id: s.id,
-          source: s.source,
-          mmsi: s.mmsi,
-          hasSource: !!s.source,
-          keys: Object.keys(s).slice(0, 6)
-        }));
-        console.log('Ship filtering debug:', {
-          total: normalizedShips.length,
-          ais: aisShips.length,
-          cv: cvShips.length,
-          samples: samples
-        });
-      }
-      
-      // Update tracking
-      lstmPredictions = cvShips.filter(s => 
-        s.predicted && s.predicted.length > 0 && !s.mmsi
-      );
-      
-      lastMessageStats = {
-        ais: aisShips.length,
-        cv: cvShips.length,
-        matched: cvShips.filter(s => s.mmsi).length,
-        lstm: lstmPredictions.length
-      };
-    }
-    
-    if (message.video_frame) {
-      const videoFrame = document.getElementById('videoFrame');
-      if (videoFrame) {
-        videoFrame.src = 'data:image/jpeg;base64,' + message.video_frame;
-        videoFrame.style.display = 'block';
-        // Hide placeholder, show live dot
-        const placeholder = document.getElementById('videoPlaceholder');
-        if (placeholder) placeholder.style.display = 'none';
-        const statusDot  = document.getElementById('videoPanelStatusDot');
-        const statusText = document.getElementById('videoPanelStatusText');
-        if (statusDot)  { statusDot.classList.add('live'); }
-        if (statusText) { statusText.textContent = 'LIVE'; }
-      }
-    }
-
-    scheduleRender();
-    updateAnalytics();
-    checkAlerts();
-    // Always update hybrid details display (it will check the mode itself)
-    updateHybridDetailsDisplay();
-  };
+window.wsOnMessageCallback = (event, message) => {
+  if (message.ships && message.ships.length > 0 && !window.loggedShipStructure) {
+    console.log('RAW WEBSOCKET MESSAGE FIRST SHIP:', message.ships[0]);
+    console.log('Message type:', message.type);
+    console.log('Total ships in message:', message.ships.length);
+    window.loggedShipStructure = true;
+  }
   
-  ws.onerror = (err) => console.error("WebSocket error:", err);
-} else {
-  console.warn('WebSocket failed to initialize - will retry');
-}
+  const normalizedShips = normalizeWsMessage(message);
+  if (normalizedShips) {
+    // If video is not playing, clear LSTM paths
+    if (message.camera_status && !message.camera_status.available) {
+      normalizedShips.forEach(ship => {
+        ship.predicted = [];
+      });
+    }
+    latestShips = normalizedShips;
+  }
+  
+  if (message.camera_status) {
+    lastCameraStatus = message.camera_status;
+  }
+  
+  if (normalizedShips && normalizedShips.length > 0) {
+    const aisShips = normalizedShips.filter(s => {
+      if (!s.source) return s.mmsi !== undefined;
+      return s.source === 'AIS';
+    });
+    const cvShips = normalizedShips.filter(s => s.source === 'CAMERA');
+    
+    lstmPredictions = cvShips.filter(s => 
+      s.predicted && s.predicted.length > 0 && !s.mmsi
+    );
+    
+    lastMessageStats = {
+      ais: aisShips.length,
+      cv: cvShips.length,
+      matched: cvShips.filter(s => s.mmsi).length,
+      lstm: lstmPredictions.length
+    };
+  }
+  
+  if (message.video_frame) {
+    const videoFrame = document.getElementById('videoFrame');
+    if (videoFrame) {
+      videoFrame.src = 'data:image/jpeg;base64,' + message.video_frame;
+      videoFrame.style.display = 'block';
+      const placeholder = document.getElementById('videoPlaceholder');
+      if (placeholder) placeholder.style.display = 'none';
+      const statusDot  = document.getElementById('videoPanelStatusDot');
+      const statusText = document.getElementById('videoPanelStatusText');
+      if (statusDot)  { statusDot.classList.add('live'); }
+      if (statusText) { statusText.textContent = 'LIVE'; }
+    }
+  }
+
+  scheduleRender();
+  updateAnalytics();
+  checkAlerts();
+  updateHybridDetailsDisplay();
+};
 
 // ─────────────────────────────
 // ANALYTICS & RISK ASSESSMENT
@@ -528,16 +533,16 @@ function getRiskScore(ship) {
 }
 
 function getRiskColor(ship) {
-  // If ship is matched to AIS (detected on camera and mapped), show yellow
+  // If ship is matched to AIS (detected on camera and mapped), show purple
   if (ship.is_matched_to_ais) {
-    return "#fbbf24";  // Fusion yellow
+    return "#a855f7";  // Purple
   }
   
   const risk = getRiskScore(ship);
   if (risk <= 2) return "#10b981";    // Green
   if (risk <= 5) return "#3b82f6";    // Blue
-  if (risk <= 7) return "#f59e0b";    // Amber
-  return "#ef4444";                    // Red
+  if (risk <= 7) return "#eab308";    // Yellow
+  return "#ef4444";                   // Red
 }
 
 function hasCollisionRisk(ship) {
@@ -576,6 +581,14 @@ function updateAnalytics() {
   document.getElementById("metricMoving").innerText = moving;
   document.getElementById("metricAnchored").innerText = anchored;
   document.getElementById("headerVessels").innerText = latestShips.length;
+  document.getElementById("headerAvgSpeed").innerText = (speeds.reduce((a, b) => a + b, 0) / speeds.length).toFixed(1);
+
+  if (sessionStartTime) {
+    const elapsed = Math.round((Date.now() - sessionStartTime) / 1000);
+    const mins = Math.floor(elapsed / 60), secs = elapsed % 60;
+    const sessionTimeEl = document.getElementById("sessionTime");
+    if (sessionTimeEl) sessionTimeEl.innerText = `${mins}:${secs.toString().padStart(2, '0')}`;
+  }
 }
 
 // ─────────────────────────────
@@ -670,14 +683,6 @@ function updateHybridDetailsDisplay() {
         }).join('');
       }
     }
-  }
-}
-  document.getElementById("headerAvgSpeed").innerText = (speeds.reduce((a, b) => a + b, 0) / speeds.length).toFixed(1);
-
-  if (sessionStartTime) {
-    const elapsed = Math.round((Date.now() - sessionStartTime) / 1000);
-    const mins = Math.floor(elapsed / 60), secs = elapsed % 60;
-    document.getElementById("sessionTime").innerText = `${mins}:${secs.toString().padStart(2, '0')}`;
   }
 }
 
@@ -1157,14 +1162,7 @@ function initializeMultiSourceSystem() {
 }
 
 function matchCVToAIS() {
-  cvDetections.forEach(cvDetection => {
-    const matchRadius = 0.05;
-    const match = latestShips.find(ship => {
-      const dist = Math.sqrt(Math.pow(ship.pos[1] - cvDetection.lat, 2) + Math.pow(ship.pos[0] - cvDetection.lon, 2));
-      return dist < matchRadius;
-    });
-    cvDetection.matched = match ? match.mmsi : null;
-  });
+  // CV to AIS matching is now handled authoritatively by the backend.
 }
 
 function generateLSTMPredictions() {
@@ -1315,9 +1313,14 @@ function setViewMode(mode) {
   const activeBtn = document.getElementById(btnMap[mode]);
   if (activeBtn) activeBtn.classList.add('active');
 
-  const videoWindow = document.querySelector('.video-window');
-  if (videoWindow) {
-    videoWindow.style.display = (mode === 'live' || mode === 'hybrid') ? 'flex' : 'none';
+  const mapArea = document.getElementById('mapArea');
+  if (mapArea) {
+    if (mode === 'live' || mode === 'hybrid') {
+      mapArea.classList.add('split-active');
+    } else {
+      mapArea.classList.remove('split-active');
+    }
+    setTimeout(() => { if (map) map.resize(); }, 300);
   }
 }
 
@@ -1331,8 +1334,15 @@ function switchMode(mode) {
   const activeBtn = document.getElementById(btnMap[mode]);
   if (activeBtn) activeBtn.classList.add('active');
 
-  // Call the AIS backend on port 8000 (not the fusion dashboard on 9000)
-  fetch('http://localhost:8000/api/mode', {
+  // Provide immediate feedback since ML models take a long time to load
+  if (mode === 'hybrid') {
+    showToast('Initializing Hybrid Mode. Loading heavy ML models (YOLO & DeepOcSort), please wait...');
+  } else {
+    showToast('Switching to AIS-Only mode...');
+  }
+
+  // Call the fusion backend's own API
+  fetch('/api/mode', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ mode })
@@ -1340,13 +1350,26 @@ function switchMode(mode) {
   .then(r => r.json())
   .then(data => {
     console.log('Mode switch response:', data);
-    showToast(`Mode: ${mode === 'ais-only' ? 'AIS Only' : 'Hybrid'}`);
-    // In AIS-only mode the video window should be hidden
-    if (mode === 'ais-only') setViewMode('ais');
+    if (data.success) {
+      showToast(`Successfully switched to ${mode === 'ais-only' ? 'AIS Only' : 'Hybrid'}!`);
+      // Update the view mode automatically
+      if (mode === 'ais-only') setViewMode('ais');
+      else if (mode === 'hybrid') setViewMode('hybrid');
+    } else {
+      showToast(`Error: ${data.error || 'Failed to switch mode'}`);
+      // Revert button state
+      document.querySelectorAll('.mode-btn').forEach(btn => btn.classList.remove('active'));
+      const activeBtn = document.getElementById(btnMap['ais-only']);
+      if (activeBtn) activeBtn.classList.add('active');
+    }
   })
   .catch(e => {
     console.error('Mode switch error:', e);
     showToast('Mode switch failed — check backend');
+    // Revert button state
+    document.querySelectorAll('.mode-btn').forEach(btn => btn.classList.remove('active'));
+    const activeBtn = document.getElementById(btnMap['ais-only']);
+    if (activeBtn) activeBtn.classList.add('active');
   });
 }
 

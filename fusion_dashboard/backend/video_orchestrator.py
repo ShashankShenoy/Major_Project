@@ -97,6 +97,7 @@ class VideoOrchestrator:
     def __init__(self, config: VideoProcessingConfig):
         self.config = config
         self.device = config.device
+        self.track_match_distance = config.track_match_distance_pixels
 
         # Initialize components
         self.gps_converter = GPSConverter(
@@ -204,10 +205,16 @@ class VideoOrchestrator:
             while self.is_processing:
                 ret, frame = cap.read()
                 if not ret:
-                    break
+                    # Video ended - loop back to the beginning to simulate continuous live feed
+                    cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
+                    continue
 
-                # Process frame
-                detections, video_frame_b64 = await self._process_frame(frame, frame_count, tracked_ships)
+                # Process frame with crash protection
+                try:
+                    detections, video_frame_b64 = await self._process_frame(frame, frame_count, tracked_ships)
+                except Exception as e:
+                    print(f"⚠️  Skipping corrupted frame {frame_count}: {e}")
+                    continue
 
                 # Create frame output
                 frame_output = FrameOutput(
@@ -220,11 +227,32 @@ class VideoOrchestrator:
                     frame_timestamp=time.time() if video_frame_b64 else None
                 )
 
-                # Put in queue for broadcaster
-                await self.frame_queue.put(frame_output)
+                # Put in queue for broadcaster with intelligent backpressure
+                try:
+                    # Check queue fill level to implement backpressure
+                    queue_size = self.frame_queue.qsize()
+                    max_size = self.frame_queue.maxsize
+                    fill_ratio = queue_size / max_size if max_size > 0 else 0
 
-                frame_count += 1
-                self.processed_frames += 1
+                    if fill_ratio > 0.9:
+                        # Queue nearly full - skip this frame to relieve pressure
+                        print(f"⚠️  Queue at {fill_ratio*100:.0f}% capacity, dropping frame {frame_count}")
+                        frame_count += 1
+                        self.processed_frames += 1
+                    else:
+                        # Queue has space - add frame
+                        await self.frame_queue.put(frame_output)
+                        frame_count += 1
+                        self.processed_frames += 1
+
+                except Exception as e:
+                    print(f"⚠️  Error managing frame queue: {e}")
+                    try:
+                        await self.frame_queue.put(frame_output)
+                    except Exception as put_err:
+                        print(f"⚠️  Dropped frame {frame_count}: queue full ({put_err})")
+                    frame_count += 1
+                    self.processed_frames += 1
 
                 # Log progress every 100 frames
                 if frame_count % 100 == 0:
@@ -429,7 +457,7 @@ class VideoOrchestrator:
     def _assign_track_id(self, cx: float, cy: float, frame_num: int,
                          tracked_ships: Dict) -> Tuple[str, Dict]:
         """Assign a stable camera track ID using nearest-neighbor matching."""
-        max_match_distance = 80.0
+        max_match_distance = self.track_match_distance  # Use configured value
         best_id = None
         best_distance = max_match_distance
 
