@@ -1,0 +1,315 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>System Health Dashboard</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: #0f172a;
+            color: #f1f5f9;
+            padding: 20px;
+            overflow: auto;
+        }
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+        h1 {
+            text-align: center;
+            margin-bottom: 30px;
+            color: #6366f1;
+            font-size: 28px;
+        }
+        .grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+            gap: 20px;
+            margin-bottom: 30px;
+        }
+        .card {
+            background: #1e293b;
+            border: 1px solid #334155;
+            border-radius: 8px;
+            padding: 20px;
+        }
+        .card-title {
+            font-size: 14px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            color: #cbd5e1;
+            margin-bottom: 15px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .status-indicator {
+            display: inline-block;
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            margin-right: 8px;
+        }
+        .status-ok { background: #16a34a; }
+        .status-warning { background: #dc2626; }
+        .status-pending { background: #f59e0b; }
+        
+        .stat {
+            display: flex;
+            justify-content: space-between;
+            padding: 8px 0;
+            border-bottom: 1px solid #334155;
+            font-size: 13px;
+        }
+        .stat:last-child { border-bottom: none; }
+        .stat-label { color: #94a3b8; }
+        .stat-value { color: #f1f5f9; font-weight: 500; }
+        
+        .issues {
+            background: #7f1d1d;
+            border: 1px solid #dc2626;
+            border-radius: 6px;
+            padding: 15px;
+            margin-top: 20px;
+        }
+        .issues-title {
+            font-weight: 600;
+            color: #fca5a5;
+            margin-bottom: 10px;
+        }
+        .issue-item {
+            font-size: 12px;
+            color: #fecaca;
+            margin: 5px 0;
+            padding-left: 15px;
+            position: relative;
+        }
+        .issue-item:before {
+            content: "●";
+            position: absolute;
+            left: 0;
+        }
+        
+        .troubleshooting {
+            background: #1e3a8a;
+            border: 1px solid #3b82f6;
+            border-radius: 6px;
+            padding: 15px;
+            margin-top: 20px;
+        }
+        .troubleshooting-title {
+            font-weight: 600;
+            color: #93c5fd;
+            margin-bottom: 10px;
+        }
+        .troubleshooting-item {
+            font-size: 12px;
+            color: #bfdbfe;
+            margin: 5px 0;
+            padding-left: 15px;
+            position: relative;
+        }
+        .troubleshooting-item:before {
+            content: "→";
+            position: absolute;
+            left: 0;
+        }
+        
+        .refresh-btn {
+            background: #6366f1;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 13px;
+            font-weight: 600;
+            margin-bottom: 20px;
+        }
+        .refresh-btn:hover { background: #4f46e5; }
+        
+        .last-update {
+            text-align: center;
+            color: #94a3b8;
+            font-size: 12px;
+            margin-top: 20px;
+        }
+        
+        .loading { color: #f59e0b; }
+        .error { color: #dc2626; }
+        .success { color: #16a34a; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🚀 Fusion Dashboard - System Health</h1>
+        
+        <button class="refresh-btn" onclick="loadDiagnostics()">🔄 Refresh Status</button>
+        
+        <div id="content">
+            <p class="loading" style="text-align: center;">Loading diagnostics...</p>
+        </div>
+        
+        <div class="last-update">
+            Last updated: <span id="lastUpdate">-</span>
+        </div>
+    </div>
+
+    <script>
+        async function loadDiagnostics() {
+            try {
+                const response = await fetch('http://localhost:9000/api/diagnostics');
+                const data = await response.json();
+                renderDashboard(data);
+                document.getElementById('lastUpdate').textContent = new Date().toLocaleTimeString();
+            } catch (e) {
+                document.getElementById('content').innerHTML = `
+                    <div class="card" style="grid-column: 1/-1;">
+                        <p class="error">❌ Failed to load diagnostics: ${e.message}</p>
+                        <p style="margin-top: 10px; font-size: 12px; color: #94a3b8;">
+                            Make sure backend is running on http://localhost:9000
+                        </p>
+                    </div>
+                `;
+            }
+        }
+
+        function renderDashboard(data) {
+            const config = data.configuration;
+            const runtime = data.runtime_status;
+            const health = data.health;
+            const issues = data.critical_issues || [];
+            const warnings = data.warnings || [];
+            const troubleshooting = data.troubleshooting || [];
+
+            let html = '<div class="grid">';
+
+            // Configuration Card
+            html += `
+                <div class="card">
+                    <div class="card-title">
+                        <span class="status-indicator ${config.video_processing_enabled ? 'status-ok' : 'status-warning'}"></span>
+                        Configuration
+                    </div>
+                    <div class="stat">
+                        <span class="stat-label">Video Processing</span>
+                        <span class="stat-value">${config.video_processing_enabled ? '✅ ON' : '❌ OFF'}</span>
+                    </div>
+                    <div class="stat">
+                        <span class="stat-label">Current Mode</span>
+                        <span class="stat-value">${config.current_mode}</span>
+                    </div>
+                    <div class="stat">
+                        <span class="stat-label">Video File</span>
+                        <span class="stat-value" style="font-size: 11px; word-break: break-word;">
+                            ${config.video_exists ? '✅' : '❌'} ${config.video_path.split('/').pop()}
+                        </span>
+                    </div>
+                    <div class="stat">
+                        <span class="stat-label">Device</span>
+                        <span class="stat-value">${config.device}</span>
+                    </div>
+                </div>
+            `;
+
+            // Runtime Status Card
+            html += `
+                <div class="card">
+                    <div class="card-title">
+                        <span class="status-indicator ${runtime.video_processing_active ? 'status-ok' : 'status-pending'}"></span>
+                        Runtime Status
+                    </div>
+                    <div class="stat">
+                        <span class="stat-label">AIS Ships</span>
+                        <span class="stat-value">${runtime.ais_ships_tracked}</span>
+                    </div>
+                    <div class="stat">
+                        <span class="stat-label">Connected Clients</span>
+                        <span class="stat-value">${runtime.connected_clients}</span>
+                    </div>
+                    <div class="stat">
+                        <span class="stat-label">Video Processing</span>
+                        <span class="stat-value">${runtime.video_processing_active ? '✅ Active' : '⏸️ Idle'}</span>
+                    </div>
+                    <div class="stat">
+                        <span class="stat-label">Frames Processed</span>
+                        <span class="stat-value">${runtime.video_frames_processed}</span>
+                    </div>
+                    <div class="stat">
+                        <span class="stat-label">Queue Size</span>
+                        <span class="stat-value">${runtime.video_queue_size}</span>
+                    </div>
+                </div>
+            `;
+
+            // Health Card
+            html += `
+                <div class="card">
+                    <div class="card-title">
+                        <span class="status-indicator ${health.ais_stream_connected ? 'status-ok' : 'status-warning'}"></span>
+                        System Health
+                    </div>
+                    <div class="stat">
+                        <span class="stat-label">AIS Stream</span>
+                        <span class="stat-value">${health.ais_stream_connected ? '✅ Connected' : '❌ Disconnected'}</span>
+                    </div>
+                    <div class="stat">
+                        <span class="stat-label">Video Loading</span>
+                        <span class="stat-value">${health.video_loading ? '✅ Ready' : '⏸️ Standby'}</span>
+                    </div>
+                    <div class="stat">
+                        <span class="stat-label">Broadcasting</span>
+                        <span class="stat-value">${health.broadcast_running ? '✅ Active' : '⏸️ Idle'}</span>
+                    </div>
+                    <div class="stat">
+                        <span class="stat-label">Startup Valid</span>
+                        <span class="stat-value">${data.startup_validation_passed ? '✅ Yes' : '❌ No'}</span>
+                    </div>
+                </div>
+            `;
+
+            html += '</div>'; // Close grid
+
+            // Issues
+            if (issues.length > 0) {
+                html += '<div class="issues"><div class="issues-title">⚠️ Critical Issues</div>';
+                issues.forEach(issue => {
+                    html += `<div class="issue-item">${issue}</div>`;
+                });
+                html += '</div>';
+            }
+
+            // Warnings
+            if (warnings.length > 0) {
+                html += '<div class="issues" style="background: #7c2d12; border-color: #ea580c;">
+                    <div class="issues-title" style="color: #fed7aa;">⚠️ Warnings</div>';
+                warnings.forEach(warning => {
+                    html += `<div class="issue-item" style="color: #ffedd5;">${warning}</div>`;
+                });
+                html += '</div>';
+            }
+
+            // Troubleshooting
+            if (troubleshooting.length > 0) {
+                html += '<div class="troubleshooting"><div class="troubleshooting-title">💡 Troubleshooting Suggestions</div>';
+                troubleshooting.forEach(suggestion => {
+                    html += `<div class="troubleshooting-item">${suggestion}</div>`;
+                });
+                html += '</div>';
+            }
+
+            document.getElementById('content').innerHTML = html;
+        }
+
+        // Load on page load
+        window.addEventListener('load', () => {
+            loadDiagnostics();
+            // Auto-refresh every 5 seconds
+            setInterval(loadDiagnostics, 5000);
+        });
+    </script>
+</body>
+</html>

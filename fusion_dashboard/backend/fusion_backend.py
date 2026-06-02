@@ -515,6 +515,11 @@ async def lifespan(app: FastAPI):
     global stale_cleanup_task, video_frame_queue, video_orchestrator, video_processing_task
 
     print("🚀 AIS Backend starting up...")
+    
+    # Run startup validation
+    if not validate_startup_config():
+        print("⚠️  Startup validation found issues - see above")
+    
     print(f"   Video Processing: {'ENABLED' if ENABLE_VIDEO_PROCESSING else 'DISABLED (AIS-only mode)'}")
 
     # Create queue for video frames
@@ -547,6 +552,76 @@ async def lifespan(app: FastAPI):
             await video_processing_task
         except asyncio.CancelledError:
             pass
+
+
+# ─────────────────────────────────────────────
+# STARTUP VALIDATION & DIAGNOSTICS
+# ─────────────────────────────────────────────
+class SystemStatus:
+    """Centralized system status tracking for diagnostics"""
+    def __init__(self):
+        self.startup_checks_passed = False
+        self.issues = []
+        self.warnings = []
+    
+    def add_issue(self, msg: str):
+        self.issues.append(msg)
+        print(f"❌ {msg}")
+    
+    def add_warning(self, msg: str):
+        self.warnings.append(msg)
+        print(f"⚠️  {msg}")
+
+_system_status = SystemStatus()
+
+def validate_startup_config():
+    """Verify all critical configuration on startup"""
+    print("\n╔════ STARTUP VALIDATION ════╗")
+    
+    # Check AIS API Key
+    if not AIS_API_KEY:
+        _system_status.add_issue("AIS_API_KEY not set - AIS streaming will fail")
+    else:
+        print("✅ AIS_API_KEY configured")
+    
+    # Check Video Processing Config
+    if ENABLE_VIDEO_PROCESSING:
+        print(f"✅ Video Processing ENABLED")
+        
+        # Check video directory exists
+        if not VIDEOS_DIR.exists():
+            _system_status.add_issue(f"Video directory missing: {VIDEOS_DIR}")
+        else:
+            video_count = len(list(VIDEOS_DIR.glob("*.*")))
+            if video_count == 0:
+                _system_status.add_warning(f"No videos found in {VIDEOS_DIR}")
+            else:
+                print(f"✅ Video library: {video_count} files found")
+        
+        # Check default video can be found
+        if VIDEO_PATH:
+            print(f"✅ Default video available: {Path(VIDEO_PATH).name}")
+        else:
+            _system_status.add_warning("No default video found - video selection required")
+    else:
+        print("⚠️  Video Processing DISABLED (mode: ais-only only)")
+    
+    # Check camera config
+    if ENABLE_VIDEO_PROCESSING:
+        print(f"✅ Camera location: {CAMERA_LAT:.4f}°N, {CAMERA_LON:.4f}°E")
+        print(f"✅ FOV: {FOV_KM} km")
+    
+    # Check DEVICE config
+    print(f"✅ Processing device: {DEVICE}")
+    
+    print("╚" + "═"*24 + "╝\n")
+    
+    if _system_status.issues:
+        print(f"⚠️  Startup validation: {len(_system_status.issues)} critical issue(s)")
+        return False
+    
+    _system_status.startup_checks_passed = True
+    return True
 
 
 # ─────────────────────────────────────────────
@@ -660,6 +735,73 @@ async def health_check():
 
 
 # ─────────────────────────────────────────────
+# DIAGNOSTICS & STATUS
+# ─────────────────────────────────────────────
+@app.get("/api/diagnostics")
+async def get_diagnostics():
+    """Comprehensive system diagnostics - use this to debug issues"""
+    with ships_lock:
+        ships_snapshot = len(ships)
+    
+    with clients_lock:
+        clients_snapshot = len(clients)
+    
+    diagnostics = {
+        "timestamp": time.time(),
+        "startup_validation_passed": _system_status.startup_checks_passed,
+        "critical_issues": _system_status.issues,
+        "warnings": _system_status.warnings,
+        "configuration": {
+            "video_processing_enabled": ENABLE_VIDEO_PROCESSING,
+            "current_mode": current_mode,
+            "video_path": VIDEO_PATH,
+            "video_exists": Path(VIDEO_PATH).exists() if VIDEO_PATH else False,
+            "camera_lat": CAMERA_LAT,
+            "camera_lon": CAMERA_LON,
+            "fov_km": FOV_KM,
+            "device": DEVICE,
+            "broadcast_fps": BROADCAST_FPS
+        },
+        "runtime_status": {
+            "ais_ships_tracked": ships_snapshot,
+            "connected_clients": clients_snapshot,
+            "video_orchestrator_initialized": video_orchestrator is not None,
+            "video_processing_active": video_orchestrator is not None and video_orchestrator.is_processing if video_orchestrator else False,
+            "video_queue_size": video_frame_queue.qsize() if video_frame_queue else 0,
+            "video_frames_processed": video_orchestrator.processed_frames if video_orchestrator else 0
+        },
+        "health": {
+            "ais_stream_connected": ships_snapshot > 0,
+            "video_loading": ENABLE_VIDEO_PROCESSING and current_mode == "hybrid",
+            "broadcast_running": clients_snapshot > 0
+        }
+    }
+    
+    # Add troubleshooting suggestions if issues detected
+    troubleshooting = []
+    
+    if not _system_status.startup_checks_passed:
+        troubleshooting.append("❌ Startup validation failed - check critical_issues above")
+    
+    if ENABLE_VIDEO_PROCESSING and current_mode == "ais-only":
+        troubleshooting.append("ℹ️  Video processing enabled but mode is ais-only - select a video to auto-switch to hybrid")
+    
+    if ENABLE_VIDEO_PROCESSING and VIDEO_PATH and not Path(VIDEO_PATH).exists():
+        troubleshooting.append(f"❌ Video file not found: {VIDEO_PATH}")
+    
+    if not diagnostics["health"]["ais_stream_connected"] and ENABLE_VIDEO_PROCESSING:
+        troubleshooting.append("⚠️  No AIS ships tracked - check AIS connection")
+    
+    if not diagnostics["runtime_status"]["video_processing_active"] and ENABLE_VIDEO_PROCESSING and current_mode == "hybrid":
+        troubleshooting.append("❌ Video processing not running despite hybrid mode - orchestrator may have crashed")
+    
+    if troubleshooting:
+        diagnostics["troubleshooting"] = troubleshooting
+    
+    return diagnostics
+
+
+# ─────────────────────────────────────────────
 # MODE SWITCHING
 # ─────────────────────────────────────────────
 @app.post("/api/mode/{mode}")
@@ -691,12 +833,14 @@ async def set_mode(mode: str):
             video_orchestrator = await create_video_orchestrator(config)
             await video_orchestrator.initialize(video_frame_queue)
             await start_video_processing()
-            print("✅ Hybrid Mode Initialized")
+            print(f"✅ Hybrid Mode Initialized - VIDEO_PATH={Path(VIDEO_PATH).name}")
         except Exception as e:
-            print(f"⚠️  Video orchestrator init failed: {e}")
+            print(f"❌ Video orchestrator init failed: {e}")
+            import traceback
+            traceback.print_exc()
             video_orchestrator = None
             current_mode = "ais-only"
-            return {"success": False, "error": "Failed to load ML models"}
+            return {"success": False, "error": f"Failed to load ML models: {e}"}
             
     elif current_mode == "ais-only" and video_orchestrator is not None:
         print("🛑 Stopping Video Processing (Freeing ML models)...")
@@ -716,16 +860,18 @@ async def set_mode(mode: str):
             import torch
             if torch.cuda.is_available():
                 torch.cuda.empty_cache()
+                print("✅ CUDA memory cleared")
         except:
             pass
 
-    print(f"🔄 Mode switched: {previous_mode} → {current_mode}")
+    print(f"✅ Mode switched: {previous_mode} → {current_mode} [VIDEO_ENABLED={ENABLE_VIDEO_PROCESSING}]")
 
     return {
         "success": True,
         "mode": current_mode,
         "previous_mode": previous_mode,
-        "video_enabled": ENABLE_VIDEO_PROCESSING
+        "video_enabled": ENABLE_VIDEO_PROCESSING,
+        "video_path": VIDEO_PATH
     }
 
 
@@ -904,6 +1050,15 @@ async def serve_mode_selector():
     if mode_path.exists():
         return FileResponse(mode_path, media_type="text/html")
     return {"error": "Mode selector not found"}
+
+
+@app.get("/status")
+async def serve_status():
+    """Serve the system health dashboard"""
+    status_path = Path(__file__).parent.parent / "frontend" / "status.html"
+    if status_path.exists():
+        return FileResponse(status_path, media_type="text/html")
+    return {"error": "Status dashboard not found"}
 
 
 @app.get("/marvis")
