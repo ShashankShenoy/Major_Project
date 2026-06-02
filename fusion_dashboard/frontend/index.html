@@ -1458,6 +1458,61 @@
             </div>
           </div>
 
+          <!-- HYBRID MODE DETAILS (shown in hybrid mode) -->
+          <div class="section" id="hybridModeSection" style="background: linear-gradient(135deg, #1e3c72 0%, #2a5298 100%); border-radius: 8px; padding: 12px; margin-bottom: 12px; display: none;">
+            <div class="section-title" style="color: #fff; margin-bottom: 10px;">HYBRID MODE DETAILS</div>
+            <div style="font-size: 11px; color: #e0e0e0; line-height: 1.8;">
+              <!-- Camera Status -->
+              <div style="background: rgba(255,255,255,0.05); padding: 8px; border-radius: 5px; margin-bottom: 10px;">
+                <div style="font-weight: bold; color: #4ade80; margin-bottom: 4px;">CAMERA STATUS</div>
+                <div style="margin-left: 12px;">
+                  <div style="display: flex; justify-content: space-between; margin-bottom: 3px;">
+                    <span>Status:</span>
+                    <strong id="cameraStatusText">Idle</strong>
+                  </div>
+                  <div style="display: flex; justify-content: space-between; margin-bottom: 3px;">
+                    <span>Location:</span>
+                    <strong id="cameraLocationText">1.28°N, 103.85°E</strong>
+                  </div>
+                  <div style="display: flex; justify-content: space-between;">
+                    <span>FOV Radius:</span>
+                    <strong id="cameraFOVText">2.0 km</strong>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Ship Sources Summary -->
+              <div style="background: rgba(255,255,255,0.05); padding: 8px; border-radius: 5px; margin-bottom: 10px;">
+                <div style="font-weight: bold; color: #60a5fa; margin-bottom: 4px;">SHIP SOURCES</div>
+                <div style="margin-left: 12px;">
+                  <div style="display: flex; justify-content: space-between; margin-bottom: 3px;">
+                    <span>AIS Ships:</span>
+                    <strong style="color: #fbbf24;" id="aisShipCount">0</strong>
+                  </div>
+                  <div style="display: flex; justify-content: space-between; margin-bottom: 3px;">
+                    <span>CV Detected:</span>
+                    <strong style="color: #4ade80;" id="cvShipCount">0</strong>
+                  </div>
+                  <div style="display: flex; justify-content: space-between; margin-bottom: 3px;">
+                    <span>Matched:</span>
+                    <strong style="color: #86efac;" id="matchedCount">0</strong>
+                  </div>
+                  <div style="display: flex; justify-content: space-between;">
+                    <span>LSTM Predicted:</span>
+                    <strong style="color: #a78bfa;" id="lstmCount">0</strong>
+                  </div>
+                </div>
+              </div>
+
+              <!-- LSTM Predictions List -->
+              <div style="background: rgba(255,255,255,0.05); padding: 8px; border-radius: 5px;">
+                <div style="font-weight: bold; color: #a78bfa; margin-bottom: 6px;">LSTM PREDICTIONS</div>
+                <div id="lstmShipsList" style="max-height: 150px; overflow-y: auto; margin-left: 6px; font-size: 10px;">
+                  <div style="color: #999; text-align: center; padding: 10px;">No LSTM predictions yet</div>
+                </div>
+              </div>
+            </div>
+          </div>
 
           <!-- ANALYTICS -->
           <div class="section">
@@ -1861,12 +1916,33 @@
       }
     }
 
+    // Initialize backend mode and load video list on page load
+    async function initializeBackendMode() {
+      const urlMode = new URLSearchParams(window.location.search).get('mode') || 'hybrid';
+      
+      // Only proceed if mode is hybrid (video processing requires backend initialization)
+      if (urlMode === 'hybrid') {
+        try {
+          console.log(`📡 Initializing backend to ${urlMode} mode...`);
+          const apiUrl = `${MODE_CONFIG.backends.ais}/api/mode`;
+          const response = await fetch(apiUrl, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ mode: urlMode })
+          });
+          const data = await response.json();
+          console.log(`✅ Backend mode initialized:`, data);
+          return data.success;
+        } catch (err) {
+          console.warn(`⚠️  Failed to initialize backend mode: ${err}`);
+          return false;
+        }
+      }
+      return true;
+    }
+
     window.addEventListener('load', async () => {
-      MODE_CONFIG.currentMode = 'hybrid';
-      localStorage.setItem('selectedMode', 'hybrid');
-      updateModeDisplay();
-      configureViewButtons();
-      setViewMode('hybrid');
+      await initializeBackendMode();
       loadVideoList();
     });
   </script>

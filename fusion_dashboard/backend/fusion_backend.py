@@ -89,7 +89,7 @@ video_orchestrator: VideoOrchestrator = None
 video_processing_task: asyncio.Task = None  # Track the video processing task
 
 # Current operating mode
-current_mode = "hybrid"
+current_mode = "ais-only"
 
 
 # ─────────────────────────────────────────────
@@ -455,10 +455,10 @@ async def unified_broadcaster():
                             ais_ships_snapshot
                         )
 
+                        # Convert to payload format
                         for det in matched_detections:
                             if isinstance(det, ShipDetection):
-                                # Use model_dump() for Pydantic v2 compatibility
-                                cv_payload.append(det.model_dump())
+                                cv_payload.append(det.dict())
 
                 except asyncio.QueueEmpty:
                     pass  # No frame available
@@ -520,29 +520,8 @@ async def lifespan(app: FastAPI):
     # Create queue for video frames
     video_frame_queue = asyncio.Queue(maxsize=100)
     
-    # Initialize heavy models on startup for fusion dashboard
-    global video_orchestrator, current_mode
-    if ENABLE_VIDEO_PROCESSING:
-        try:
-            config = VideoProcessingConfig(
-                video_path=VIDEO_PATH,
-                camera_lat=CAMERA_LAT,
-                camera_lon=CAMERA_LON,
-                fov_km=FOV_KM,
-                device=DEVICE,
-                confidence_threshold=CONFIDENCE_THRESHOLD,
-                cv_match_radius_deg=CV_MATCH_RADIUS_KM / 111.0
-            )
-            video_orchestrator = await create_video_orchestrator(config)
-            await video_orchestrator.initialize(video_frame_queue)
-            await start_video_processing()
-            print("✅ Video orchestrator initialized and processing started")
-        except Exception as e:
-            print(f"⚠️ Failed to initialize video orchestrator: {e}")
-            video_orchestrator = None
-            current_mode = "ais-only"
-    else:
-        video_orchestrator = None
+    # Do NOT initialize the heavy models on startup. Wait until 'hybrid' mode is selected.
+    video_orchestrator = None
 
     # Start background tasks
     stale_cleanup_task = asyncio.create_task(stale_ship_cleanup())
@@ -550,9 +529,11 @@ async def lifespan(app: FastAPI):
     asyncio.create_task(unified_broadcaster())
 
     asyncio.create_task(persistent_ais_stream())
+
+    # Do not start video processing loop here; it will be started in set_mode
     
     print("✅ All tasks started")
-    print("   Ready: Live Hybrid Fusion Mode")
+    print("   Ready: Live AIS only (Hybrid mode will load ML models when selected)")
 
     yield
 
@@ -799,9 +780,8 @@ async def list_videos():
 @app.post("/api/video/select")
 async def select_video(request: Request):
     """
-    Switch the active video at runtime.
+    Switch the active video at runtime and automatically start hybrid mode.
     Body: { "path": "/absolute/path/to/video.avi" }
-    If hybrid mode is running the orchestrator is restarted on the new file.
     """
     global VIDEO_PATH, video_orchestrator, current_mode
 
@@ -865,13 +845,36 @@ async def select_video(request: Request):
             video_orchestrator = None
             current_mode = "ais-only"
             return {"success": False, "error": f"Orchestrator restart failed: {e}"}
+    elif current_mode == "ais-only":
+        # Auto-switch to hybrid mode when video is selected
+        print("⏳ Auto-switching to Hybrid Mode (Loading YOLO & DeepOcSort)...")
+        try:
+            config = VideoProcessingConfig(
+                video_path=VIDEO_PATH,
+                camera_lat=CAMERA_LAT,
+                camera_lon=CAMERA_LON,
+                fov_km=FOV_KM,
+                device=DEVICE,
+                confidence_threshold=CONFIDENCE_THRESHOLD,
+                cv_match_radius_deg=CV_MATCH_RADIUS_KM / 111.0
+            )
+            video_orchestrator = await create_video_orchestrator(config)
+            await video_orchestrator.initialize(video_frame_queue)
+            await start_video_processing()
+            current_mode = "hybrid"
+            print(f"✅ Hybrid Mode Initialized & Video Processing Started on {target.name}")
+        except Exception as e:
+            print(f"⚠️  Failed to initialize hybrid mode: {e}")
+            video_orchestrator = None
+            current_mode = "ais-only"
+            return {"success": False, "error": f"Failed to load ML models: {e}"}
 
     return {
         "success": True,
         "selected": target.name,
         "path": VIDEO_PATH,
         "previous": old_path,
-        "restarted": current_mode == "hybrid"
+        "mode": current_mode
     }
 
 

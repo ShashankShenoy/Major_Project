@@ -672,23 +672,14 @@ function updateHybridDetailsDisplay() {
     }
   }
 }
+  document.getElementById("headerAvgSpeed").innerText = (speeds.reduce((a, b) => a + b, 0) / speeds.length).toFixed(1);
 
-  // Update session duration
   if (sessionStartTime) {
-    const duration = Math.floor((Date.now() - sessionStartTime) / 1000);
-    const m = Math.floor(duration / 60).toString().padStart(2, '0');
-    const s = (duration % 60).toString().padStart(2, '0');
-    const el = document.getElementById("sessionTime");
-    if (el) el.innerText = `${m}:${s}`;
+    const elapsed = Math.round((Date.now() - sessionStartTime) / 1000);
+    const mins = Math.floor(elapsed / 60), secs = elapsed % 60;
+    document.getElementById("sessionTime").innerText = `${mins}:${secs.toString().padStart(2, '0')}`;
   }
-
-  // Update average speed in header
-  if (latestShips.length > 0) {
-    const speeds = latestShips.map(s => s.sog || 0);
-    const avg = speeds.reduce((a, b) => a + b, 0) / speeds.length;
-    const speedEl = document.getElementById("headerAvgSpeed");
-    if (speedEl) speedEl.innerText = `${avg.toFixed(1)} kts`;
-  }
+}
 
 function checkAlerts() {
   let alerts = [];
@@ -729,9 +720,6 @@ function scheduleRender() {
 
 function renderShips() {
   if (!mapLoaded) return;
-
-  const layers = ['ships', 'matched-ships', 'tracks', 'selected-track', 'predicted', 'selected-predicted', 'destination', 'headings', 'arrows', 'speed-circles', 'collision-zones', 'heatmap'];
-  layers.forEach(l => { if (map.getSource(l)) map.getSource(l).setData({ type: 'FeatureCollection', features: [] }); });
 
   const ships = [], matchedShips = [], tracks = [], selTracks = [], preds = [], selPreds = [];
   const dests = [], headings = [], arrows = [], speedCircles = [], collisions = [], heatmapPoints = [];
@@ -836,19 +824,54 @@ function updateVesselDetails() {
   const distance = (stats.distance || 0).toFixed(2);
   const lat = ship.pos[1].toFixed(6);
   const lon = ship.pos[0].toFixed(6);
-  const fused = fuseDataSources(ship);
-  const lstm = lstmPredictions.find(l => l.mmsi === ship.mmsi);
 
   section.style.display = 'block';
   noSection.style.display = 'none';
 
   document.getElementById("selectedVesselContent").innerHTML = `
-    <div style="margin-bottom: 8px;"><div style="font-size: 14px; font-weight: 700; color: var(--primary);">${ship.name}</div><div style="font-size: 10px; color: var(--text-secondary); font-family: monospace;">MMSI: ${ship.mmsi}</div></div>
-    <div style="margin-bottom: 8px; font-size: 10px;"><div style="margin-bottom: 4px; font-weight: 600; text-transform: uppercase; color: var(--text-secondary);">Sources</div>${getSourceBadgeHTML(ship)}<div style="margin-top: 3px; color: var(--text-secondary);">Fused: ${fused.source} (${(fused.confidence * 100).toFixed(0)}%)</div></div>
-    <div style="display: flex; gap: 8px; margin-bottom: 8px;"><span class="status-badge status-${ship.sog > 1 ? 'moving' : 'anchored'}"><span class="status-dot"></span>${status}</span><span class="status-badge" style="background: ${riskColor}20; color: ${riskColor};">Risk: ${riskLevel}</span></div>
-    <div class="metric-grid" style="margin-bottom: 8px;"><div class="metric-box"><div class="metric-value" style="color: ${getSpeedColor(ship.sog)};">${ship.sog.toFixed(1)}</div><div class="metric-label">Speed (kts)</div></div><div class="metric-box"><div class="metric-value">${ship.cog.toFixed(0)}</div><div class="metric-label">Heading (°)</div></div></div>
-    <div style="font-size: 10px; padding: 8px; background: var(--bg-2); border-radius: 4px;"><div style="display: flex; justify-content: space-between; margin-bottom: 4px; padding-bottom: 4px; border-bottom: 1px solid var(--border);"><span>Lat</span><span style="font-family: monospace; font-weight: 600;">${lat}</span></div><div style="display: flex; justify-content: space-between; margin-bottom: 4px; padding-bottom: 4px; border-bottom: 1px solid var(--border);"><span>Lon</span><span style="font-family: monospace; font-weight: 600;">${lon}</span></div><div style="display: flex; justify-content: space-between; margin-bottom: 4px; padding-bottom: 4px; border-bottom: 1px solid var(--border);"><span>Duration</span><span>${trackDuration} min</span></div><div style="display: flex; justify-content: space-between;"><span>Distance</span><span>${distance} km</span></div></div>
-    ${lstm ? `<div style="font-size: 10px; margin-top: 8px; padding: 8px; background: rgba(190, 24, 93, 0.1); border-left: 2px solid #be185d; border-radius: 4px;"><div style="font-weight: 600; color: #be185d;">LSTM Prediction: ${(lstm.confidence * 100).toFixed(0)}% confidence</div></div>` : ''}
+    <div style="margin-bottom: 12px;">
+      <div style="font-size: 14px; font-weight: 700; color: var(--primary); margin-bottom: 4px;">${ship.name}</div>
+      <div style="font-size: 11px; color: var(--text-secondary); font-family: monospace;">MMSI: ${ship.mmsi}</div>
+    </div>
+
+    <div style="display: flex; gap: 10px; margin-bottom: 12px;">
+      <span class="status-badge status-${ship.sog > 1 ? 'moving' : 'anchored'}">
+        <span class="status-dot"></span> ${status}
+      </span>
+      <span class="status-badge" style="background: ${riskColor}20; color: ${riskColor};">
+        Risk: ${riskLevel}
+      </span>
+    </div>
+
+    <div class="metric-grid" style="margin-bottom: 12px;">
+      <div class="metric-box">
+        <div class="metric-value" style="color: ${getSpeedColor(ship.sog)};">${ship.sog.toFixed(1)}</div>
+        <div class="metric-label">Speed (kts)</div>
+      </div>
+      <div class="metric-box">
+        <div class="metric-value">${ship.cog.toFixed(0)}</div>
+        <div class="metric-label">Heading (°)</div>
+      </div>
+    </div>
+
+    <div style="font-size: 11px; margin-bottom: 12px; padding: 10px; background: var(--bg-2); border-radius: 6px;">
+      <div style="display: flex; justify-content: space-between; margin-bottom: 8px; padding-bottom: 8px; border-bottom: 1px solid var(--border);">
+        <span style="color: var(--text-secondary);">Latitude</span>
+        <span style="color: var(--text-primary); font-family: monospace; font-weight: 600;">${lat}</span>
+      </div>
+      <div style="display: flex; justify-content: space-between; margin-bottom: 8px; padding-bottom: 8px; border-bottom: 1px solid var(--border);">
+        <span style="color: var(--text-secondary);">Longitude</span>
+        <span style="color: var(--text-primary); font-family: monospace; font-weight: 600;">${lon}</span>
+      </div>
+      <div style="display: flex; justify-content: space-between; margin-bottom: 8px; padding-bottom: 8px; border-bottom: 1px solid var(--border);">
+        <span style="color: var(--text-secondary);">Track Duration</span>
+        <span style="color: var(--text-primary); font-family: monospace; font-weight: 600;">${trackDuration} min</span>
+      </div>
+      <div style="display: flex; justify-content: space-between;">
+        <span style="color: var(--text-secondary);">Distance Traveled</span>
+        <span style="color: var(--text-primary); font-family: monospace; font-weight: 600;">${distance} km</span>
+      </div>
+    </div>
   `;
 }
 
@@ -1239,6 +1262,32 @@ function showDataSourceDashboard() {
   if (modal) modal.classList.add('active');
 }
 
+// Enhanced updateVesselDetails with multi-source info
+(function() {
+  const original = updateVesselDetails;
+  updateVesselDetails = function() {
+    const section = document.getElementById("vesselDetailsSection");
+    const noSection = document.getElementById("noSelectionSection");
+    if (!selectedShip) { section.style.display = 'none'; noSection.style.display = 'block'; return; }
+    const ship = latestShips.find(s => s.shipKey === selectedShip);
+    if (!ship) return;
+    const stats = ship.trackStats || {};
+    const risk = getRiskScore(ship);
+    const status = ship.sog < 1 ? "Anchored" : "Moving";
+    const riskLevel = risk <= 2 ? "Safe" : risk <= 5 ? "Normal" : risk <= 7 ? "Warning" : "Danger";
+    const riskColor = getRiskColor(ship);
+    const trackDuration = Math.round((stats.duration || 0) / 60);
+    const distance = (stats.distance || 0).toFixed(2);
+    const lat = ship.pos[1].toFixed(6);
+    const lon = ship.pos[0].toFixed(6);
+    const fused = fuseDataSources(ship);
+    const lstm = lstmPredictions.find(l => l.mmsi === ship.mmsi);
+    section.style.display = 'block';
+    noSection.style.display = 'none';
+    document.getElementById("selectedVesselContent").innerHTML = `
+      <div style="margin-bottom: 8px;"><div style="font-size: 14px; font-weight: 700; color: var(--primary);">${ship.name}</div><div style="font-size: 10px; color: var(--text-secondary); font-family: monospace;">MMSI: ${ship.mmsi}</div></div>
+      <div style="margin-bottom: 8px; font-size: 10px;"><div style="margin-bottom: 4px; font-weight: 600; text-transform: uppercase; color: var(--text-secondary);">Sources</div>${getSourceBadgeHTML(ship)}<div style="margin-top: 3px; color: var(--text-secondary);">Fused: ${fused.source} (${(fused.confidence * 100).toFixed(0)}%)</div></div>
+      <div style="display: flex; gap: 8px; margin-bottom: 8px;"><span class="status-badge status-${ship.sog > 1 ? 'moving' : 'anchored'}"><span class="status-dot"></span>${status}</span><span class="status-badge" style="background: ${riskColor}20; color: ${riskColor};">Risk: ${riskLevel}</span></div>
       <div class="metric-grid" style="margin-bottom: 8px;"><div class="metric-box"><div class="metric-value" style="color: ${getSpeedColor(ship.sog)};">${ship.sog.toFixed(1)}</div><div class="metric-label">Speed (kts)</div></div><div class="metric-box"><div class="metric-value">${ship.cog.toFixed(0)}</div><div class="metric-label">Heading (°)</div></div></div>
       <div style="font-size: 10px; padding: 8px; background: var(--bg-2); border-radius: 4px;"><div style="display: flex; justify-content: space-between; margin-bottom: 4px; padding-bottom: 4px; border-bottom: 1px solid var(--border);"><span>Lat</span><span style="font-family: monospace; font-weight: 600;">${lat}</span></div><div style="display: flex; justify-content: space-between; margin-bottom: 4px; padding-bottom: 4px; border-bottom: 1px solid var(--border);"><span>Lon</span><span style="font-family: monospace; font-weight: 600;">${lon}</span></div><div style="display: flex; justify-content: space-between; margin-bottom: 4px; padding-bottom: 4px; border-bottom: 1px solid var(--border);"><span>Duration</span><span>${trackDuration} min</span></div><div style="display: flex; justify-content: space-between;"><span>Distance</span><span>${distance} km</span></div></div>
       ${lstm ? `<div style="font-size: 10px; margin-top: 8px; padding: 8px; background: rgba(190, 24, 93, 0.1); border-left: 2px solid #be185d; border-radius: 4px;"><div style="font-weight: 600; color: #be185d;">LSTM Prediction: ${(lstm.confidence * 100).toFixed(0)}% confidence</div></div>` : ''}
@@ -1282,8 +1331,8 @@ function switchMode(mode) {
   const activeBtn = document.getElementById(btnMap[mode]);
   if (activeBtn) activeBtn.classList.add('active');
 
-  // Call the fusion backend (same origin) to switch mode
-  fetch(window.location.origin + '/api/mode', {
+  // Call the AIS backend on port 8000 (not the fusion dashboard on 9000)
+  fetch('http://localhost:8000/api/mode', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ mode })

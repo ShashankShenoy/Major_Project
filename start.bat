@@ -23,9 +23,8 @@ set FOV_KM=15.0
 set AIS_ALLOW_INSECURE_SSL=true
 set DISPLAY_UPDATE_SECONDS=1.0
 
-REM AIS backend = pure AIS tracking only (no video).
-REM Video is handled by the Marvis backend on port 5000.
-set ENABLE_VIDEO_PROCESSING=false
+REM Enable video processing for fusion dashboard
+set ENABLE_VIDEO_PROCESSING=true
 
 set PROJECT_DIR=%~dp0
 set BACKEND_DIR=%PROJECT_DIR%ais_dashboard\backend
